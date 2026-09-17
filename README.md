@@ -165,14 +165,22 @@ artwork, import any `zip_package` export — your own, or a published sample set
 - In the app: **Projects → Import project**, and upload the ZIP. A GitHub *Download ZIP* works as-is, wrapper
   directory and all, so a project published as a browsable repository imports without repacking. An archive holding
   several projects restores one of them per import and says which it ignored.
-- Or from the CLI, which also verifies the download:
+- Over HTTP, as a **raw body** — multipart is capped at 64 MB because it has to be buffered whole, while a raw
+  body streams to disk. `-T` streams from the file; `--data-binary` would read it all into curl's memory:
+  ```bash
+  curl -X POST -T project.zip "https://your-instance/api/projects/import?name=project.zip" \
+    -H "content-type: application/zip" -H "x-csrf-token: $CSRF" -b cookies.txt
+  ```
+  The filename comes from `?name=` (or an `x-file-name` header); anything non-multipart is treated as the file
+  itself. `IMPORT_MAX_UPLOAD_MB` is the ceiling, and `client_max_body_size` on that nginx route has to match it.
+- Or on the server, from a URL or a path:
   ```bash
   docker compose exec api bun db:seed --owner <user> \
     --samples https://example.com/a-project.zip --sha256 <hex>
   ```
-  Repeat `--samples` (and `--sha256`) per project; a local path works too. Each package is read or downloaded, its
-  SHA-256 printed and checked against the matching `--sha256`, then handed to the same import path the UI uses — so
-  the worker must be running.
+  Repeat `--samples` (and `--sha256`) per project; a local path works too. The SHA-256 is always printed, and
+  compared only when you pass `--sha256`. Each package is handed to the same import path the UI uses, so the worker
+  must be running.
 
 Importing is also the way to move a project between installs: **Exports → ZIP package** produces exactly this
 shape.

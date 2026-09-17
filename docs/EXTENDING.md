@@ -687,6 +687,14 @@ Either reuse the existing phrasing or extend `MONOCHROME_WORDING` — and add a 
    **422 `validation_error`** with a `details` array. Multipart uploads go through `readImageUpload`
    (`apps/api/src/lib/uploads.ts`), which returns 413/415 rather than letting a large body through.
 
+   **Large uploads take a raw body, not multipart.** `c.req.formData()` materialises the whole request before
+   anything can be written to disk, so `POST /api/projects/import` caps multipart at 64 MB
+   (`MAX_MULTIPART_BYTES`, checked against `content-length` before parsing) and otherwise treats the body as the
+   file itself: any non-multipart content type, filename from `?name=` or `x-file-name`, piped to disk chunk by
+   chunk against `IMPORT_MAX_UPLOAD_MB`. A new endpoint that accepts something big should copy that shape rather
+   than reach for multipart — and `Bun.serve`'s `maxRequestBodySize` (`apps/api/src/server.ts`) has to cover the
+   largest body you intend to accept, or the connection is closed mid-upload and the caller sees a 502.
+
 5. **Authorize with the shared helpers, never ad hoc.** `projectAccess(c, projectId, action)`
    (`apps/api/src/lib/access.ts`) returns the project row or throws; `entityAccess(c, kind, id, action)` resolves any
    child entity (chapter, scene, page, panel, character, version, location, prop…) to its project first. Actions are

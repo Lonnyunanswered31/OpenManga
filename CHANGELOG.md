@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- A multipart import larger than the 64 MB ceiling returned a 502: the size was checked after
+  `c.req.formData()` had already materialised the body. It is now checked against `content-length` first, so the
+  caller gets the 413 that names the raw-body alternative.
 - An archive that holds several projects (a repository of sample projects, zipped) restored one of them without
   saying so. The import now reports which project it restored and which it ignored.
 

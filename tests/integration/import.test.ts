@@ -337,6 +337,18 @@ describe("project import", () => {
     expect(await artworkShas(projectId)).toEqual(await artworkShas(sourceId));
   }, 240_000);
 
+  test("an oversized multipart upload is refused before the body is parsed", async () => {
+    // The 413 has to come from the declared length: parsing a 1.5 GB multipart body is what used to fail, and it
+    // surfaced as a 502 rather than a message telling the caller to stream it.
+    const form = new FormData();
+    form.set("file", new File([new Uint8Array(1024)], "big.zip"));
+    const res = await alice.raw("POST", "/api/projects/import", form, {
+      "content-length": String(200 * 1024 * 1024),
+    });
+    expect(res.status).toBe(413);
+    expect((await res.json()).error.message).toContain("raw body");
+  }, 60_000);
+
   test("a multipart upload still works", async () => {
     const zip = await exportAndDownload(sourceId, "zip_package");
     const form = new FormData();

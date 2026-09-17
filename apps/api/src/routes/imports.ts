@@ -18,6 +18,12 @@ const tooLarge = (mb: number) => new ApiError(413, "too_large", `Import files ar
  * and this is the other half of it.
  */
 const MAX_MULTIPART_BYTES = 64 * 1024 * 1024;
+const multipartTooLarge = () =>
+  new ApiError(
+    413,
+    "too_large",
+    `Multipart uploads are limited to ${Math.round(MAX_MULTIPART_BYTES / (1024 * 1024))} MB. Send the file as a raw body instead (any non-multipart content type, filename in ?name=), which is streamed to disk.`,
+  );
 const safeName = (raw: string | undefined, fallback: string) =>
   (raw ?? "").replace(/[^\w.\- ]/g, "_").slice(0, 200) || fallback;
 
@@ -33,8 +39,13 @@ importRoutes.post("/projects/import", async (c) => {
   const deps = c.get("deps");
   const maxMb = deps.config.IMPORT_MAX_UPLOAD_MB;
   const maxBytes = maxMb * 1024 * 1024;
-  if (Number(c.req.header("content-length") ?? 0) > maxBytes + 64_000) throw tooLarge(maxMb);
+  const declared = Number(c.req.header("content-length") ?? 0);
+  if (declared > maxBytes + 64_000) throw tooLarge(maxMb);
   const multipart = (c.req.header("content-type") ?? "").startsWith("multipart/form-data");
+  // Checked before parsing, not after: `c.req.formData()` materialises the whole body, so a multipart upload past
+  // this ceiling used to die inside that call and surface as a 502 instead of the 413 that explains the fix.
+  // Content-length includes the multipart envelope, which only makes the ceiling slightly conservative.
+  if (multipart && declared > MAX_MULTIPART_BYTES) throw multipartTooLarge();
 
   const dir = join(deps.config.TEMP_ROOT, "imports");
   await mkdir(dir, { recursive: true });
@@ -55,12 +66,7 @@ importRoutes.post("/projects/import", async (c) => {
       const file = form.get("file");
       if (!(file instanceof File)) throw badRequest('Missing file field "file"');
       if (file.size > maxBytes) throw tooLarge(maxMb);
-      if (file.size > MAX_MULTIPART_BYTES)
-        throw new ApiError(
-          413,
-          "too_large",
-          `Multipart uploads are limited to ${Math.round(MAX_MULTIPART_BYTES / (1024 * 1024))} MB; send the file as a raw body to stream it`,
-        );
+      if (file.size > MAX_MULTIPART_BYTES) throw multipartTooLarge();
       originalName = safeName(file.name, "import");
       head = new Uint8Array(await file.slice(0, 256).arrayBuffer());
       bytes = file.size;
