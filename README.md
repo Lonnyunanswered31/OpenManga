@@ -1,4 +1,30 @@
-# OpenManga
+<h1 align="center">OpenManga</h1>
+
+<p align="center"><strong>Self-hosted studio that turns a story into a consistent AI-illustrated comic, webtoon or
+narrated video.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/pr0h0/OpenManga/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/pr0h0/OpenManga/ci.yml?branch=master&label=CI"></a>
+  <a href="https://github.com/pr0h0/OpenManga/tags"><img alt="Latest tag" src="https://img.shields.io/github/v/tag/pr0h0/OpenManga?sort=semver&label=release"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/pr0h0/OpenManga"></a>
+  <a href="https://github.com/pr0h0?tab=packages&repo_name=OpenManga"><img alt="Container images on GHCR" src="https://img.shields.io/badge/images-ghcr.io-2496ed"></a>
+  <a href="#running-without-any-api-keys"><img alt="Runs with no API keys" src="https://img.shields.io/badge/demo-no%20API%20keys-brightgreen"></a>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> &nbsp;·&nbsp;
+  <a href="#screenshots">Screenshots</a> &nbsp;·&nbsp;
+  <a href="#docker-deployment">Deploy</a> &nbsp;·&nbsp;
+  <a href="#ai-providers-bring-your-own-key">Providers</a> &nbsp;·&nbsp;
+  <a href="#running-without-any-api-keys">No-key demo</a> &nbsp;·&nbsp;
+  <a href="docs/EXTENDING.md">Extending</a> &nbsp;·&nbsp;
+  <a href="docs/COSTS.md">Costs</a> &nbsp;·&nbsp;
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
+
+<p align="center">
+  <a href="docs/images/chapter-pages.png"><img alt="Pages of a planned chapter, every panel generated against the same canonical references" src="docs/images/chapter-pages.png" width="900"></a>
+</p>
 
 A self-hosted production tool for consistent AI-generated manhwa, manga, webtoons and illustrated recaps. It is not "story → giant prompt → comic.png": the story becomes structured state (cast, world, chapters, scenes, pages, panel specs), canonical references pin identity, panels are generated cheaply and versioned, and lettering, layout, narration and exports are deterministic.
 
@@ -22,8 +48,7 @@ A self-hosted production tool for consistent AI-generated manhwa, manga, webtoon
 - **Cost dashboard**: today/7d/30d/lifetime, provider and operation breakdowns, reference-size experiments, regeneration/acceptance rates. **Admin**: users, jobs, queues, Kokoro status, storage, errors, rate snapshots, maintenance.
 
 ## Screenshots
-![Chapter pages with generated panel artwork](docs/images/chapter-pages.png)
-*Pages of a planned chapter, every panel generated against the same canonical references.*
+The chapter-pages view is at the top of this page. The rest of the studio:
 
 | | |
 |---|---|
