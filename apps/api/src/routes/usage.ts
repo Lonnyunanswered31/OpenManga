@@ -110,6 +110,7 @@ export async function usageSummary(db: Database, scope: string | string[] | null
     where g.kind = 'panel_generation' and g.status = 'completed' and ${jobFilter}`);
   const w = Object.fromEntries([...windows].map((r) => [r.win, { costUsd: r.cost, calls: r.calls }]));
   const provs = [...providers];
+  const isImageSpend = (p: { images: number; image_out: number }) => p.images > 0 || p.image_out > 0;
   return {
     windows: w,
     /** Calls against a model with no rate snapshot: their cost is recorded as 0, so every total here is a floor. */
@@ -122,9 +123,11 @@ export async function usageSummary(db: Database, scope: string | string[] | null
         acc[p.provider] = (acc[p.provider] ?? 0) + p.cost;
         return acc;
       }, {}),
-      // Split on the recorded image count, not image tokens: flat-per-image providers bill no image tokens at all.
-      imagesUsd: provs.filter((p) => p.images > 0).reduce((s, p) => s + p.cost, 0),
-      textUsd: provs.filter((p) => p.images === 0).reduce((s, p) => s + p.cost, 0),
+      // Either signal makes it image spend: the recorded image count (flat-per-image providers bill no image
+      // tokens at all) or billed image output tokens (rows written before the images column existed, and billed
+      // failures, carry no count). Text is everything that is not image, so no row can fall out of both buckets.
+      imagesUsd: provs.filter(isImageSpend).reduce((s, p) => s + p.cost, 0),
+      textUsd: provs.filter((p) => !isImageSpend(p)).reduce((s, p) => s + p.cost, 0),
       mockUsd: provs.filter((p) => p.provider === "mock").reduce((s, p) => s + p.cost, 0),
       kokoroLocalUsd: 0,
     },

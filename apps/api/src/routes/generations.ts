@@ -34,6 +34,12 @@ const ListQuery = z.object({
   batchId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   before: z.string().datetime().optional(),
+  /** `nextCursor` from a previous page: "<createdAt ISO>|<job id>". Keyed on the pair because a bulk enqueue
+   *  gives hundreds of jobs the same createdAt, which a timestamp-only cursor would skip past. */
+  cursor: z
+    .string()
+    .regex(/^[^|]+\|[0-9a-f-]{36}$/)
+    .optional(),
 });
 
 doc({
@@ -47,6 +53,8 @@ generationRoutes.get("/projects/:projectId/generations", async (c) => {
   const p = await projectAccess(c, uuidParam(c, "projectId"), "read");
   const q = query(c, ListQuery);
   const { db } = c.get("deps");
+  const [at, id] = q.cursor?.split("|") ?? [];
+  const cursor = at && id ? { at, id } : null;
   const where = and(
     eq(generationJobs.projectId, p.id),
     q.status ? inArray(generationJobs.status, q.status.split(",") as ("queued" | "failed")[]) : undefined,
@@ -54,6 +62,7 @@ generationRoutes.get("/projects/:projectId/generations", async (c) => {
     q.targetId ? eq(generationJobs.targetId, q.targetId) : undefined,
     q.batchId ? eq(generationJobs.batchId, q.batchId) : undefined,
     q.before ? sql`${generationJobs.createdAt} < ${q.before}` : undefined,
+    cursor ? sql`(${generationJobs.createdAt}, ${generationJobs.id}) < (${cursor.at}, ${cursor.id}::uuid)` : undefined,
   );
   const jobs = await db
     .select({
@@ -65,8 +74,9 @@ generationRoutes.get("/projects/:projectId/generations", async (c) => {
     })
     .from(generationJobs)
     .where(where)
-    .orderBy(desc(generationJobs.createdAt))
+    .orderBy(desc(generationJobs.createdAt), desc(generationJobs.id))
     .limit(q.limit);
+  const last = jobs.at(-1);
   const [counts] = await db.execute<Record<string, number>>(sql`select
     count(*) filter (where status = 'queued')::int as queued,
     count(*) filter (where status = 'processing')::int as processing,
@@ -83,6 +93,8 @@ generationRoutes.get("/projects/:projectId/generations", async (c) => {
       outputAssetId: j.outputAssetId,
     })),
     counts,
+    /** Pass back as ?cursor= for the next page. Null on the last page. */
+    nextCursor: jobs.length === q.limit && last ? `${last.job.createdAt.toISOString()}|${last.job.id}` : null,
   });
 });
 

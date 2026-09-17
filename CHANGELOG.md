@@ -5,6 +5,28 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Published container images track tagged releases.
 
+## [Unreleased]
+
+### Fixed
+
+- Maintenance failed healthy long-running jobs after two hours of wall clock, whatever they were doing. A
+  118-minute film export was marked "Worker stopped during export" while it was still rendering (it went on to
+  finish successfully), and the phantom failed row left the single export slot occupied until the worker was
+  restarted by hand. The sweep now judges liveness — the last write to the row, `STALLED_JOB_TIMEOUT_MINUTES`,
+  never a job a worker still holds — and clears the queue entry of one it does fail.
+- `PATCH /api/projects/:id` reset settings the caller never sent: a patch carrying one field turned a film
+  project into a 1600x2400 comic. zod's `.partial()` keeps each field's `.default()`, so an omitted key parsed
+  back as its default and overwrote the stored value. Same bug, same fix, in three more places — `PATCH
+  /api/scenes/:id` (wiped summary, location, cast and continuity state), `PATCH /api/character-outfits/:id`
+  (wiped the outfit description and demoted the default outfit) and a new SFX box's style.
+- Image spend was reported as text spend: the cost split keyed on a per-image counter that is zero for rows
+  written before it existed and for billed failures. It now counts billed image output tokens too.
+- `GET /projects/:id/generations` capped at 50 rows with no way to page. It returns `nextCursor`, keyed on
+  `(createdAt, id)` so a bulk enqueue's identical timestamps cannot hide a whole tie group.
+- A chapter plan that declined to replace existing pages completed without saying so. The `job.updated` event
+  now carries `applied`, and a plan reports the density it achieved (`sourceWords`, `panelsPerKWord`) plus
+  `targetMissed` when it lands more than 25% off a requested page count.
+
 ## [0.1.1] — 2026-09-17
 
 ### Fixed

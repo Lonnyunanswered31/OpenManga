@@ -300,5 +300,8 @@ export async function publishJob(deps: WorkerDeps, j: GenerationJob) {
     targetId: j.targetId,
     batchId: j.batchId,
     failureReason: j.failureReason,
+    // A plan that declined to replace existing pages completes without applying anything; without this the
+    // client sees a plain "completed" and cannot tell the difference from a plan that took effect.
+    applied: (j.result as { applied?: boolean } | null)?.applied ?? null,
   });
 }

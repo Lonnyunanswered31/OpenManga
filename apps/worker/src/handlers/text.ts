@@ -265,7 +265,20 @@ export async function chapterPlan(deps: WorkerDeps, job: GenerationJob) {
   const r = await structured(deps, job, messages, ChapterPlan, "ChapterPlan", 64_000);
   const applied = await applyChapterPlan(deps.db, chapterId, r.data, { replace: Boolean(job.input.replace) });
   await deps.events.publish(job.projectId, { type: "chapter.updated", chapterId });
-  return { chapterId, repaired: r.repaired, ...applied, scenes: r.data.scenes.length };
+  // Planning the same script twice can return very different densities, so report what this plan achieved
+  // against its source: a caller re-planning a chapter can compare runs instead of eyeballing the result.
+  const sourceWords = (chapter.sourceExcerpt || chapter.summary).trim().split(/\s+/).filter(Boolean).length;
+  const target = typeof job.input.targetPages === "number" ? job.input.targetPages : null;
+  const density = {
+    sourceWords,
+    panelsPerKWord: sourceWords ? Number(((applied.panels / sourceWords) * 1000).toFixed(2)) : null,
+    /** Only when pages were asked for: a plan that lands far under the request is the thin-chapter case. */
+    targetPages: target,
+    targetMissed: target ? Math.abs(applied.pages - target) / target > 0.25 : false,
+  };
+  if (density.targetMissed)
+    deps.logger.warn("chapter plan missed the requested page count", { chapterId, ...density, pages: applied.pages });
+  return { chapterId, repaired: r.repaired, ...applied, scenes: r.data.scenes.length, ...density };
 }
 
 export async function pagePrompts(deps: WorkerDeps, job: GenerationJob) {
