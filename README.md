@@ -160,7 +160,9 @@ bun admin:create  # interactive admin creation
 
 ### Sample projects
 `bun db:seed` builds a demo from placeholder art, with no AI calls and no spend. To load a project with real
-artwork, import any `zip_package` export — your own, or a published sample set:
+artwork, import any `zip_package` export — your own, or the
+[sample projects](https://github.com/pr0h0/openmanga-samples) (one story as comic pages and as a narrated 16:9
+film, browsable unpacked, importable from the release assets):
 
 - In the app: **Projects → Import project**, and upload the ZIP. A GitHub *Download ZIP* works as-is, wrapper
   directory and all, so a project published as a browsable repository imports without repacking. An archive holding
@@ -176,7 +178,8 @@ artwork, import any `zip_package` export — your own, or a published sample set
 - Or on the server, from a URL or a path:
   ```bash
   docker compose exec api bun db:seed --owner <user> \
-    --samples https://example.com/a-project.zip --sha256 <hex>
+    --samples https://github.com/pr0h0/openmanga-samples/releases/latest/download/openmanga-sample-film.zip \
+    --sha256 5820a8c2fd34fddfeebf6cd350e6b9a0e2bb16a1810dc7a84d42092e2e08ba9f
   ```
   Repeat `--samples` (and `--sha256`) per project; a local path works too. The SHA-256 is always printed, and
   compared only when you pass `--sha256`. Each package is handed to the same import path the UI uses, so the worker
