@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { assets, eq, generationJobs, generationOutputs, sql } from "@openmanga/db";
+import { assets, eq, exportJobs, generationJobs, generationOutputs, inArray, sql } from "@openmanga/db";
+import { runMaintenance } from "../../apps/worker/src/handlers/maintenance.ts";
 import { runGenerationJob } from "../../apps/worker/src/lib/runner.ts";
 import { startHarness, type TestClient } from "./harness.ts";
 
@@ -96,5 +97,47 @@ describe("job redelivery", () => {
     const [after] = await h.deps.db.select().from(generationJobs).where(eq(generationJobs.id, job!.id));
     expect(after!.status).toBe("completed");
     expect(await h.deps.db.execute(sql`select 1`)).toBeTruthy();
+  });
+});
+
+describe("stalled-job sweep", () => {
+  // The bug this covers: the sweep judged jobs on elapsed time alone, so a 2h+ video export that was writing
+  // progress the whole time was marked failed at the two-hour mark while it was still rendering.
+  const insertExport = async (kind: "video_panels" | "zip_package", quietMinutes: number) => {
+    const [row] = await h.deps.db
+      .insert(exportJobs)
+      .values({
+        projectId,
+        userId: null,
+        kind,
+        status: "processing",
+        options: {},
+        startedAt: new Date(Date.now() - 5 * 3600_000),
+      })
+      .returning();
+    await h.deps.db.execute(
+      sql`update export_jobs set updated_at = now() - (${quietMinutes} || ' minutes')::interval where id = ${row!.id}`,
+    );
+    return row!.id;
+  };
+
+  test("a long export that keeps writing progress survives; a silent one is failed", async () => {
+    const live = await insertExport("video_panels", 1); // wrote progress a minute ago
+    const dead = await insertExport("zip_package", 600); // untouched for 10 hours
+    await runMaintenance(h.workerDeps);
+    const rows = await h.deps.db
+      .select()
+      .from(exportJobs)
+      .where(inArray(exportJobs.id, [live, dead]));
+    expect(rows.find((r) => r.id === live)!.status).toBe("processing");
+    expect(rows.find((r) => r.id === dead)!.status).toBe("failed");
+  });
+
+  test("a quiet job a worker is still running is left alone", async () => {
+    const id = await insertExport("video_panels", 600);
+    const deps = { ...h.workerDeps, queue: { ...h.workerDeps.queue, state: async () => "active" } };
+    await runMaintenance(deps as typeof h.workerDeps);
+    const [row] = await h.deps.db.select().from(exportJobs).where(eq(exportJobs.id, id));
+    expect(row!.status).toBe("processing");
   });
 });

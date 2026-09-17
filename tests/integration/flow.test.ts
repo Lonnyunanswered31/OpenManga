@@ -928,6 +928,7 @@ describe("full production flow (mock AI)", () => {
       enqueue: async () => {},
       removeWaiting: async () => true,
       has: async () => false,
+      state: async () => null,
       counts: async () => ({}) as never,
       close: async () => {},
     };

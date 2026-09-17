@@ -16,6 +16,7 @@ import {
   sessions,
   sql,
 } from "@openmanga/db";
+import type { QueueName } from "@openmanga/queue";
 import { KeyRing, rotateCredentials } from "@openmanga/services";
 import type { WorkerDeps } from "../context.ts";
 
@@ -102,36 +103,65 @@ export async function runMaintenance(deps: WorkerDeps) {
     }
   } catch {}
 
-  // Jobs stuck in processing for >2h (worker crash) become failed so the UI and retries work.
-  const stuck = await deps.db
-    .update(generationJobs)
-    .set({
-      status: "failed",
-      failureCode: "stalled",
-      failureReason: "The worker stopped while processing this job. Retry it.",
-      finishedAt: now,
-    })
-    .where(
-      and(
-        eq(generationJobs.status, "processing"),
-        lt(generationJobs.startedAt, new Date(now.getTime() - 2 * 3600_000)),
-      ),
-    )
-    .returning({ id: generationJobs.id });
+  /**
+   * Jobs abandoned by a crashed worker become failed so the UI and retries work. Liveness decides that, not
+   * elapsed time: a row is only stalled if nothing has written to it for STALLED_JOB_TIMEOUT_MINUTES *and* Redis
+   * no longer reports the job as active. A 2h+ video export writes progress throughout, so it stays alive — the
+   * old duration-only rule failed such an export at the two-hour mark while it was still rendering, and then the
+   * phantom "failed" row left the single export slot occupied until someone restarted the worker by hand.
+   */
+  const quietSince = new Date(now.getTime() - deps.config.STALLED_JOB_TIMEOUT_MINUTES * 60_000);
+  /** Ids of quiet `processing` rows that no worker is still running. Generation jobs name their own queue. */
+  const abandoned = async (
+    table: typeof generationJobs | typeof audioJobs | typeof exportJobs,
+    queueOf: (row: { id: string; queue: string | null }) => QueueName,
+  ) => {
+    const quiet = await deps.db
+      .select({ id: table.id, queue: "queue" in table ? table.queue : sql<string | null>`null` })
+      .from(table)
+      .where(and(eq(table.status, "processing"), lt(table.updatedAt, quietSince)))
+      .limit(500);
+    const ids: string[] = [];
+    for (const row of quiet) {
+      const queue = queueOf(row);
+      // A worker still holding the job is doing real work, however long it has been quiet.
+      if ((await deps.queue.state(queue, row.id).catch(() => null)) === "active") continue;
+      ids.push(row.id);
+      // Drop a leftover queue entry so it cannot start later against a row we just failed.
+      await deps.queue.removeWaiting(queue, row.id).catch(() => false);
+    }
+    return ids;
+  };
+
+  const stuck = await abandoned(generationJobs, (r) => (r.queue ?? "image-generation") as QueueName);
+  if (stuck.length)
+    await deps.db
+      .update(generationJobs)
+      .set({
+        status: "failed",
+        failureCode: "stalled",
+        failureReason: "The worker stopped while processing this job. Retry it.",
+        finishedAt: now,
+      })
+      .where(inArray(generationJobs.id, stuck));
   result.stalledJobs = stuck.length;
-  await deps.db
-    .update(audioJobs)
-    .set({
-      status: "failed",
-      failureCode: "stalled",
-      failureReason: "Worker stopped during synthesis",
-      finishedAt: now,
-    })
-    .where(and(eq(audioJobs.status, "processing"), lt(audioJobs.startedAt, new Date(now.getTime() - 2 * 3600_000))));
-  await deps.db
-    .update(exportJobs)
-    .set({ status: "failed", failureReason: "Worker stopped during export", finishedAt: now })
-    .where(and(eq(exportJobs.status, "processing"), lt(exportJobs.startedAt, new Date(now.getTime() - 2 * 3600_000))));
+  const stuckAudio = await abandoned(audioJobs, () => "tts");
+  if (stuckAudio.length)
+    await deps.db
+      .update(audioJobs)
+      .set({
+        status: "failed",
+        failureCode: "stalled",
+        failureReason: "Worker stopped during synthesis",
+        finishedAt: now,
+      })
+      .where(inArray(audioJobs.id, stuckAudio));
+  const stuckExports = await abandoned(exportJobs, () => "export");
+  if (stuckExports.length)
+    await deps.db
+      .update(exportJobs)
+      .set({ status: "failed", failureReason: "Worker stopped during export", finishedAt: now })
+      .where(inArray(exportJobs.id, stuckExports));
 
   await deps.db.execute(
     sql`delete from outbox where status = 'published' and published_at < now() - interval '7 days'`,

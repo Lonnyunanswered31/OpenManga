@@ -25,6 +25,8 @@ export interface JobQueue {
   removeWaiting(queue: QueueName, jobId: string): Promise<boolean>;
   /** Whether Redis still holds this job (any state). */
   has(queue: QueueName, jobId: string): Promise<boolean>;
+  /** BullMQ's state for this job ("active", "waiting", "prioritized", …), or null if Redis has no such job. */
+  state(queue: QueueName, jobId: string): Promise<string | null>;
   counts(): Promise<Record<QueueName, Record<string, number>>>;
   close(): Promise<void>;
 }
@@ -73,6 +75,11 @@ export class BullJobQueue implements JobQueue {
 
   async has(queue: QueueName, jobId: string) {
     return Boolean(await this.queue(queue).getJob(jobId));
+  }
+
+  async state(queue: QueueName, jobId: string) {
+    const job = await this.queue(queue).getJob(jobId);
+    return job ? await job.getState() : null;
   }
 
   async counts() {
@@ -193,6 +200,8 @@ export type AppEvent =
       targetId?: string | null;
       batchId?: string | null;
       failureReason?: string | null;
+      /** False when a completed job deliberately applied nothing (a plan that would not replace existing pages). */
+      applied?: boolean | null;
     }
   | { type: "panel.updated"; panelId: string; pageId: string; status: string; activeArtworkAssetId?: string | null }
   | { type: "reference.updated"; subjectType: string; subjectVersionId: string; assetId: string }

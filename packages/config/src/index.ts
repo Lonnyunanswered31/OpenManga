@@ -100,6 +100,12 @@ const EnvSchema = z.object({
   EXPORT_WORKER_CONCURRENCY: int(1),
   /** Page clips a video export renders/encodes in parallel (each ffmpeg is roughly one core at veryfast). */
   VIDEO_ENCODE_CONCURRENCY: int(4),
+  /**
+   * How long a job may go without touching its row before maintenance calls it stalled. Measured from the last
+   * write, not from the start, so long work that reports progress is never failed for taking its time — it has to
+   * exceed the quietest stretch of a healthy run (the longest is a video export's two-pass loudnorm).
+   */
+  STALLED_JOB_TIMEOUT_MINUTES: int(120),
 
   RATE_LIMIT_PER_MINUTE: int(600),
   LOGIN_MAX_ATTEMPTS: int(10),
