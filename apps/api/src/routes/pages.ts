@@ -41,7 +41,7 @@ import {
   templateFrames,
 } from "@openmanga/domain";
 import { panelCheckV1, panelPromptsV3 } from "@openmanga/prompts";
-import { Bubble, CameraAngle, Frame, ImageTransform, PanelSpec, SfxStyle, ShotType } from "@openmanga/schemas";
+import { asPatch, Bubble, CameraAngle, Frame, ImageTransform, PanelSpec, SfxStyle, ShotType } from "@openmanga/schemas";
 import { recordAudit } from "@openmanga/services";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -1103,7 +1103,7 @@ pageRoutes.delete("/dialogue/:id", async (c) => {
 const NewSfx = z.object({
   panelId: z.string().uuid().nullable().default(null),
   text: z.string().trim().min(1).max(100),
-  style: SfxStyle.partial().optional(),
+  style: asPatch(SfxStyle).optional(),
 });
 doc({
   method: "POST",

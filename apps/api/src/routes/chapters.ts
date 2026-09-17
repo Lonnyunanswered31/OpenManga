@@ -1,6 +1,7 @@
 import { and, asc, chapters, eq, generationJobs, inArray, pages, panels, scenes, sql, storyBeats } from "@openmanga/db";
 import { PRIORITY } from "@openmanga/domain";
 import { chapterPlanningV5, shotPlanningV2 } from "@openmanga/prompts";
+import { asPatch } from "@openmanga/schemas";
 import { recordAudit } from "@openmanga/services";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -288,12 +289,12 @@ doc({
   path: "/api/scenes/:id",
   summary: "Edit scene / scene memory / continuity state",
   tag: "chapters",
-  body: SceneInput.partial(),
+  body: asPatch(SceneInput),
 });
 chapterRoutes.patch("/scenes/:id", async (c) => {
   const id = uuidParam(c, "id");
   await entityAccess(c, "scene", id, "write");
-  const input = await body(c, SceneInput.partial());
+  const input = await body(c, asPatch(SceneInput));
   const [row] = await c.get("deps").db.update(scenes).set(input).where(eq(scenes.id, id)).returning();
   return c.json({ scene: row });
 });

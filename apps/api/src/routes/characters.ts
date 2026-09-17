@@ -15,7 +15,7 @@ import {
   sql,
 } from "@openmanga/db";
 import { canTransition, lintCharacter } from "@openmanga/domain";
-import { CharacterBible, CharacterRole } from "@openmanga/schemas";
+import { asPatch, CharacterBible, CharacterRole } from "@openmanga/schemas";
 import { isStale, recordAudit, versionFingerprints } from "@openmanga/services";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -550,7 +550,7 @@ doc({
   path: "/api/character-outfits/:id",
   summary: "Edit outfit",
   tag: "characters",
-  body: OutfitInput.partial(),
+  body: asPatch(OutfitInput),
 });
 characterRoutes.patch("/character-outfits/:id", async (c) => {
   const id = uuidParam(c, "id");
@@ -558,7 +558,7 @@ characterRoutes.patch("/character-outfits/:id", async (c) => {
   const [o] = await db.select().from(characterOutfits).where(eq(characterOutfits.id, id));
   if (!o) throw notFound("Outfit");
   await entityAccess(c, "character", o.characterId, "write");
-  const input = await body(c, OutfitInput.partial());
+  const input = await body(c, asPatch(OutfitInput));
   if (input.isDefault)
     await db.update(characterOutfits).set({ isDefault: false }).where(eq(characterOutfits.characterId, o.characterId));
   const [row] = await db.update(characterOutfits).set(input).where(eq(characterOutfits.id, id)).returning();

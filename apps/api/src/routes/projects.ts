@@ -23,7 +23,7 @@ import {
   storyRevisions,
   stylePresets,
 } from "@openmanga/db";
-import { FILM_PAGE, ProjectFormat, ProjectSettings } from "@openmanga/schemas";
+import { asPatch, FILM_PAGE, ProjectFormat, ProjectSettings } from "@openmanga/schemas";
 import { recordAudit, UNPRICED_USAGE } from "@openmanga/services";
 import { sha256Hex } from "@openmanga/storage";
 import { Hono } from "hono";
@@ -68,7 +68,7 @@ const UpdateProject = z.object({
   language: z.string().trim().min(2).max(16).optional(),
   readingDirection: ReadingDirection.optional(),
   colorMode: ColorMode.optional(),
-  settings: ProjectSettings.partial().optional(),
+  settings: asPatch(ProjectSettings).optional(),
 });
 
 const ListQuery = z.object({ status: z.enum(["active", "archived", "trash", "all"]).default("active") });

@@ -2,6 +2,23 @@ import { z } from "zod";
 
 const unit = z.number().min(0).max(1);
 
+/**
+ * A PATCH body for an object schema: every field optional, and — unlike `.partial()` — no `.default()` survives.
+ * `.partial()` only wraps each field in `ZodOptional`, so a defaulted field a caller omitted still parses back as
+ * its default; spreading that over a stored object resets every customised value to the schema's defaults. Use
+ * this wherever a parsed patch is merged into stored data, so only the keys the caller actually sent are applied.
+ */
+export const asPatch = <T extends z.ZodObject<z.ZodRawShape>>(schema: T) =>
+  z.object(
+    Object.fromEntries(
+      Object.entries(schema.shape).map(([k, v]) => {
+        const field = (v instanceof z.ZodDefault ? v.def.innerType : v) as z.ZodTypeAny;
+        return [k, field.optional()];
+      }),
+    ),
+    // Types as `.partial()` does — every field optional, value types intact — while the runtime drops defaults.
+  ) as unknown as ReturnType<T["partial"]>;
+
 export const Frame = z.object({ x: unit, y: unit, width: z.number().gt(0).max(1), height: z.number().gt(0).max(1) });
 export type Frame = z.infer<typeof Frame>;
 
