@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="OpenManga">
+  <title>OpenManga</title>
+  <!-- A comic page: four panels in a layout, knocked out of the app's accent colour. Solid ground so the one
+       file works on a light or a dark background, and legible down to 16px. -->
+  <rect x="2" y="2" width="28" height="28" rx="6.5" fill="#3b6cf6"/>
+  <rect x="7" y="7" width="11" height="7.5" rx="1.6" fill="#fff"/>
+  <rect x="20.5" y="7" width="4.5" height="7.5" rx="1.6" fill="#fff"/>
+  <rect x="7" y="17.5" width="8" height="7.5" rx="1.6" fill="#fff"/>
+  <rect x="17.5" y="17.5" width="7.5" height="7.5" rx="1.6" fill="#fff"/>
+</svg>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="OpenManga">
+  <title>OpenManga</title>
+  <!-- Single-colour version: inherits the surrounding text colour, for docs, print and favicons. -->
+  <path fill="currentColor" fill-rule="evenodd" d="M8.5 2h15A6.5 6.5 0 0 1 30 8.5v15A6.5 6.5 0 0 1 23.5 30h-15A6.5 6.5 0 0 1 2 23.5v-15A6.5 6.5 0 0 1 8.5 2Zm-1.9 6.6v4.3c0 .9.7 1.6 1.6 1.6h9.4c.9 0 1.6-.7 1.6-1.6V8.6c0-.9-.7-1.6-1.6-1.6H8.2c-.9 0-1.6.7-1.6 1.6Zm13.9 0v4.3c0 .9.7 1.6 1.6 1.6h1.3c.9 0 1.6-.7 1.6-1.6V8.6c0-.9-.7-1.6-1.6-1.6h-1.3c-.9 0-1.6.7-1.6 1.6ZM6.6 19.1v4.3c0 .9.7 1.6 1.6 1.6h6.4c.9 0 1.6-.7 1.6-1.6v-4.3c0-.9-.7-1.6-1.6-1.6H8.2c-.9 0-1.6.7-1.6 1.6Zm10.9 0v4.3c0 .9.7 1.6 1.6 1.6h5.9c.9 0 1.6-.7 1.6-1.6v-4.3c0-.9-.7-1.6-1.6-1.6h-5.9c-.9 0-1.6.7-1.6 1.6Z"/>
+</svg>

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/logo.svg" alt="" width="96" height="96">
+</p>
+
 <h1 align="center">OpenManga</h1>
 
 <p align="center"><strong>Self-hosted studio that turns a story into a consistent AI-illustrated comic, webtoon or

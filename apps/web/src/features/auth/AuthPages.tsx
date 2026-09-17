@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { BookOpen } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { get, post } from "../../api/client.ts";
 import { qk } from "../../api/hooks.ts";
 import type { SessionUser } from "../../api/types.ts";
+import { Logo } from "../../components/Logo.tsx";
 import { ErrorBox, Spinner } from "../../components/ui.tsx";
 
 type AuthConfig = { registrationEnabled: boolean; devMailboxEnabled: boolean };
@@ -26,7 +26,7 @@ function AuthCard({
     <div className="flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2 text-lg font-semibold">
-          <BookOpen className="size-6 text-accent-500" /> OpenManga
+          <Logo className="size-6 text-accent-500" /> OpenManga
         </div>
         <div className="card p-6 shadow-sm">
           <h1 className="text-lg font-semibold">{title}</h1>

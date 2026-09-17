@@ -1,8 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
-import { BarChart3, BookOpen, LogOut, Moon, Shield, Sun, User } from "lucide-react";
+import { BarChart3, LogOut, Moon, Shield, Sun, User } from "lucide-react";
 import { useState } from "react";
 import { logout, useMe, useMeta } from "../api/hooks.ts";
+import { Logo } from "./Logo.tsx";
 
 export function AppShell() {
   const { data: me } = useMe();
@@ -22,7 +23,7 @@ export function AppShell() {
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--panel)] px-4">
         <Link to="/" className="flex items-center gap-2 font-semibold tracking-tight">
-          <BookOpen className="size-5 text-accent-500" />
+          <Logo className="size-5 text-accent-500" />
           OpenManga
         </Link>
         {meta?.mockMode && (
