@@ -1,0 +1,31 @@
+{
+  "name": "@openmanga/api",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "hono": "^4.9.0",
+    "zod": "^4.1.0",
+    "@openmanga/config": "workspace:*",
+    "@openmanga/db": "workspace:*",
+    "@openmanga/schemas": "workspace:*",
+    "@openmanga/domain": "workspace:*",
+    "@openmanga/auth": "workspace:*",
+    "@openmanga/mail": "workspace:*",
+    "@openmanga/queue": "workspace:*",
+    "@openmanga/storage": "workspace:*",
+    "@openmanga/image-utils": "workspace:*",
+    "@openmanga/prompts": "workspace:*",
+    "@openmanga/logger": "workspace:*",
+    "@openmanga/audio": "workspace:*",
+    "ioredis": "^5.7.0",
+    "@openmanga/services": "workspace:*",
+    "@openmanga/testing": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts"
+  }
+}

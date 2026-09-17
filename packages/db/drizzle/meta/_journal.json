@@ -1,0 +1,69 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789343434107,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789462534034,
+      "tag": "0001_byok_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789463492299,
+      "tag": "0002_audio_job_options",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789467207022,
+      "tag": "0003_pause_language_qa",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789468762861,
+      "tag": "0004_export_job_result",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789483756187,
+      "tag": "0005_narration_pause_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789488470732,
+      "tag": "0006_content_policy_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789553464782,
+      "tag": "0007_retried_by_job",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789602414832,
+      "tag": "0008_usage_quantities",
+      "breakpoints": true
+    }
+  ]
+}

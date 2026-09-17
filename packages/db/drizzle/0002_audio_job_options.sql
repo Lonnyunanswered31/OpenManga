@@ -1,0 +1,1 @@
+ALTER TABLE "audio_jobs" ADD COLUMN "options" jsonb DEFAULT '{}'::jsonb NOT NULL;

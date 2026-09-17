@@ -1,0 +1,13 @@
+{
+  "name": "@openmanga/testing",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@openmanga/schemas": "workspace:*",
+    "@openmanga/domain": "workspace:*",
+    "sharp": "^0.35.4"
+  }
+}

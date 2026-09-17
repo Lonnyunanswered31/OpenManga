@@ -1,0 +1,124 @@
+OpenManga
+Copyright 2026 OpenManga contributors
+
+This product includes software developed as part of the OpenManga project, licensed under the Apache
+License, Version 2.0 (see LICENSE).
+
+The sections below cover third-party material that OpenManga either redistributes in this repository,
+bakes into its container images, or downloads at runtime.
+
+
+--------------------------------------------------------------------------------
+Kokoro-82M (text-to-speech model weights)
+--------------------------------------------------------------------------------
+
+Licence: Apache License 2.0
+Upstream: https://huggingface.co/hexgrad/Kokoro-82M
+
+The local TTS service loads the Kokoro-82M weights at runtime. `services/kokoro/app.py` resolves the
+repository from the `KOKORO_REPO_ID` environment variable, defaulting to `hexgrad/Kokoro-82M`, and
+downloads it from Hugging Face into the cache directory on first use. The weights are **not**
+redistributed in this repository and are not baked into the published container images.
+
+The Python `kokoro` package itself is also Apache-2.0 (see `services/kokoro/requirements.txt`).
+
+
+--------------------------------------------------------------------------------
+DejaVu Sans (bundled font)
+--------------------------------------------------------------------------------
+
+Files:
+  apps/web/public/fonts/DejaVuSans.ttf
+  apps/web/public/fonts/DejaVuSans-Bold.ttf
+
+Licence: Bitstream Vera Fonts Copyright, plus the Arev Fonts Copyright for imported glyphs; the
+DejaVu changes themselves are in the public domain. Full text in `licenses/DejaVu-License.txt`.
+
+  Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved.
+  Copyright (c) 2006 by Tavmjong Bah. All Rights Reserved.
+
+The licence requires the copyright and trademark notices to be included in all copies, and forbids
+distributing modified versions under the "Bitstream", "Vera", "Tavmjong Bah" or "Arev" names. These
+files are shipped unmodified. `licenses/DejaVu-License.txt` is the upstream licence file verbatim,
+so it also carries the terms for the TeX Gyre DJV Math fonts, which OpenManga does not ship.
+
+
+--------------------------------------------------------------------------------
+Comic Neue (bundled font)
+--------------------------------------------------------------------------------
+
+Files:
+  apps/web/public/fonts/ComicNeue-Regular.otf
+  apps/web/public/fonts/ComicNeue-Bold.otf
+
+Licence: SIL Open Font License, Version 1.1. Full text in `licenses/OFL-1.1.txt`.
+Upstream: https://github.com/crozynski/comicneue
+
+  Copyright 2014 The Comic Neue Project Authors (https://github.com/crozynski/comicneue),
+  with Reserved Font Name "Comic Neue".
+
+The OFL requires this licence to travel with the font files in any redistribution, including
+redistribution as part of a larger package. "Comic Neue" is a Reserved Font Name: a modified version
+of these files may not be distributed under that name. These files are shipped unmodified. If you
+fork OpenManga and change the fonts, rename them.
+
+
+--------------------------------------------------------------------------------
+libvips (via the sharp image library)
+--------------------------------------------------------------------------------
+
+Licence: LGPL-3.0-or-later
+Upstream: https://github.com/libvips/libvips
+
+`packages/image-utils` depends on `sharp` (Apache-2.0), which installs a prebuilt libvips binary as
+`@img/sharp-libvips-linux-x64` (and the musl variant). That binary is LGPL-3.0-or-later and is
+present in the published application container image. libvips is used as a shared library through
+sharp's own bindings; it is not modified here. Source for the exact version is available from the
+upstream project and from the npm package, and sharp can be rebuilt against a system libvips.
+
+
+--------------------------------------------------------------------------------
+System packages in the container images
+--------------------------------------------------------------------------------
+
+`deploy/docker/app.Dockerfile` installs the following Debian packages into the application image:
+
+  ffmpeg, fontconfig, fonts-dejavu-core, fonts-comic-neue, tini, ca-certificates
+
+`services/kokoro/Dockerfile` installs:
+
+  espeak-ng, libsndfile1
+
+Each remains under its own licence, which is unchanged by inclusion in these images. Two are
+copyleft and worth naming: Debian's `ffmpeg` build is distributed under the GNU GPL (OpenManga
+invokes it as a separate executable for video and audio export; it is not linked into OpenManga's
+own code), and `espeak-ng` is GPL-3.0-or-later (used by the Kokoro service for phonemisation). The
+licence text for every installed package is present in `/usr/share/doc/<package>/copyright` inside
+the image. The base images — `oven/bun`, `nginx:alpine`, `postgres:alpine`, `redis:alpine` — carry
+their own notices.
+
+
+--------------------------------------------------------------------------------
+Other dependencies
+--------------------------------------------------------------------------------
+
+The remaining runtime dependencies are under permissive licences that require only that their own
+copyright notices and licence text be preserved, which happens through the package metadata in
+`node_modules`: MIT, ISC, BSD-3-Clause, 0BSD, Apache-2.0 and Unlicense. The Apache-2.0 ones include
+`drizzle-orm`, `sharp` and `detect-libc`; `postgres` is released under the Unlicense.
+
+Two build-time-only dependencies are not in that set, and neither ends up in a published image:
+
+  - `lightningcss` (MPL-2.0), pulled in by Tailwind CSS v4's Vite plugin. Used unmodified; only its
+    CSS output ships.
+  - `caniuse-lite` (CC-BY-4.0), pulled in by browserslist. Its data is used unmodified at build time.
+    Attribution: https://caniuse.com, by Alexis Deveria and contributors.
+
+
+--------------------------------------------------------------------------------
+Generated output
+--------------------------------------------------------------------------------
+
+Artwork, narration audio and exports produced by a running OpenManga instance come from the AI
+providers the operator configures with their own keys, plus local Kokoro synthesis. Rights in that
+output are governed by the terms of whichever provider generated it. OpenManga claims nothing in it.

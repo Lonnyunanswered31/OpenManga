@@ -1,0 +1,14 @@
+{
+  "name": "@openmanga/ai-image",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@openmanga/image-utils": "workspace:*",
+    "@openmanga/logger": "workspace:*",
+    "@openmanga/domain": "workspace:*",
+    "@openmanga/testing": "workspace:*"
+  }
+}

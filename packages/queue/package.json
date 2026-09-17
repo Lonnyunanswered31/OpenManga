@@ -1,0 +1,14 @@
+{
+  "name": "@openmanga/queue",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "bullmq": "^5.58.0",
+    "ioredis": "^5.7.0",
+    "@openmanga/db": "workspace:*",
+    "@openmanga/logger": "workspace:*"
+  }
+}

@@ -1,0 +1,270 @@
+name: openmanga
+
+# Applied to every service: a container that is broken into starts with nothing it does not need.
+x-hardened: &hardened
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+
+x-app-env: &app-env
+  NODE_ENV: ${NODE_ENV:-production}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: postgres://${POSTGRES_USER:-openmanga}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-openmanga}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+  CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-}
+  CREDENTIALS_ENCRYPTION_OLD_KEYS: ${CREDENTIALS_ENCRYPTION_OLD_KEYS:-}
+  COOKIE_SECURE: ${COOKIE_SECURE:-true}
+  AI_MOCK_MODE: ${AI_MOCK_MODE:-false}
+  AI_MOCK_ALLOW_IN_PRODUCTION: ${AI_MOCK_ALLOW_IN_PRODUCTION:-false}
+  AI_ALLOW_PRIVATE_BASE_URLS: ${AI_ALLOW_PRIVATE_BASE_URLS:-false}
+  AI_TEXT_TIMEOUT_MS: ${AI_TEXT_TIMEOUT_MS:-900000}
+  AI_TEXT_MAX_CONCURRENCY: ${AI_TEXT_MAX_CONCURRENCY:-4}
+  AI_IMAGE_TIMEOUT_MS: ${AI_IMAGE_TIMEOUT_MS:-300000}
+  AI_IMAGE_MAX_CONCURRENCY: ${AI_IMAGE_MAX_CONCURRENCY:-8}
+  IMAGE_QUALITY: ${IMAGE_QUALITY:-low}
+  IMAGE_SIZES: ${IMAGE_SIZES:-2048x1152,1152x2048,1792x1024,1024x1792,1536x1024,1024x1536,1408x1408}
+  REFERENCE_MAX_WIDTH: ${REFERENCE_MAX_WIDTH:-192}
+  REFERENCE_MAX_HEIGHT: ${REFERENCE_MAX_HEIGHT:-288}
+  FLAT_RATE_REFERENCE_MAX_WIDTH: ${FLAT_RATE_REFERENCE_MAX_WIDTH:-768}
+  FLAT_RATE_REFERENCE_MAX_HEIGHT: ${FLAT_RATE_REFERENCE_MAX_HEIGHT:-1152}
+  REFERENCE_FIT: ${REFERENCE_FIT:-inside}
+  REFERENCE_FORMAT: ${REFERENCE_FORMAT:-webp}
+  REFERENCE_QUALITY: ${REFERENCE_QUALITY:-85}
+  REFERENCE_ALLOW_UPSCALE: ${REFERENCE_ALLOW_UPSCALE:-false}
+  ASSET_ROOT: /data/assets
+  TEMP_ROOT: /data/tmp
+  TTS_ENABLED: ${TTS_ENABLED:-true}
+  TTS_PROVIDER: ${TTS_PROVIDER:-kokoro}
+  KOKORO_URL: http://kokoro:8000
+  KOKORO_DEFAULT_VOICE: ${KOKORO_DEFAULT_VOICE:-af_heart}
+  KOKORO_DEFAULT_SPEED: ${KOKORO_DEFAULT_SPEED:-1.0}
+  NARRATION_SEGMENT_MAX_CHARS: ${NARRATION_SEGMENT_MAX_CHARS:-400}
+  TTS_TRIM_SILENCE: ${TTS_TRIM_SILENCE:-true}
+  TTS_TRIM_THRESHOLD_DB: ${TTS_TRIM_THRESHOLD_DB:--45}
+  TTS_TRIM_KEEP_MS: ${TTS_TRIM_KEEP_MS:-25}
+  APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3480/app}
+  API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:3480/api}
+  CDN_PUBLIC_URL: ${CDN_PUBLIC_URL:-http://localhost:3480/cdn}
+  SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+  RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-600}
+  LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-10}
+  UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-15728640}
+  # Keep in step with client_max_body_size on /api/projects/import in deploy/nginx/default.conf.
+  IMPORT_MAX_UPLOAD_MB: ${IMPORT_MAX_UPLOAD_MB:-4096}
+  IMPORT_MAX_ENTRY_MB: ${IMPORT_MAX_ENTRY_MB:-512}
+  IMPORT_MAX_COMPRESSION_RATIO: ${IMPORT_MAX_COMPRESSION_RATIO:-5}
+  REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+  DEV_MAILBOX_ENABLED: ${DEV_MAILBOX_ENABLED:-false}
+  API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
+  IMAGE_WORKER_CONCURRENCY: ${IMAGE_WORKER_CONCURRENCY:-24}
+  IMAGE_EDIT_WORKER_CONCURRENCY: ${IMAGE_EDIT_WORKER_CONCURRENCY:-6}
+  TEXT_WORKER_CONCURRENCY: ${TEXT_WORKER_CONCURRENCY:-4}
+  TTS_WORKER_CONCURRENCY: ${TTS_WORKER_CONCURRENCY:-4}
+  EXPORT_WORKER_CONCURRENCY: ${EXPORT_WORKER_CONCURRENCY:-1}
+  VIDEO_ENCODE_CONCURRENCY: ${VIDEO_ENCODE_CONCURRENCY:-4}
+
+services:
+  postgres:
+    <<: *hardened
+    mem_limit: 1g
+    cap_add: ["CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"]
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-openmanga}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-openmanga}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  redis:
+    <<: *hardened
+    mem_limit: 768m
+    cap_add: ["CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"]
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "${REDIS_MAXMEMORY:-512mb}",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+
+  kokoro:
+    <<: *hardened
+    mem_limit: 6g
+    build: ./services/kokoro
+    image: openmanga-kokoro:1
+    restart: unless-stopped
+    environment:
+      HF_HOME: /cache/huggingface
+      KOKORO_DEVICE: cpu
+      KOKORO_PRELOAD_VOICES: af_heart
+      # 4 processes x 2 threads fits 8 cores; measured serial throughput was ~18 segments/min.
+      KOKORO_WORKERS: ${KOKORO_WORKERS:-4}
+      OMP_NUM_THREADS: ${KOKORO_THREADS:-2}
+      MKL_NUM_THREADS: ${KOKORO_THREADS:-2}
+    volumes:
+      - kokoro-cache:/cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+    networks: [internal]
+    profiles: ["tts"]
+
+  mock-ai:
+    <<: *hardened
+    mem_limit: 512m
+    image: openmanga-app:1
+    restart: unless-stopped
+    command: ["bun", "apps/mock-ai/src/server.ts"]
+    environment:
+      MOCK_AI_PORT: "4010"
+    networks: [internal]
+    profiles: ["mock"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    <<: *hardened
+    mem_limit: 1g
+    build:
+      context: .
+      dockerfile: deploy/docker/app.Dockerfile
+    image: openmanga-app:1
+    command: ["bun", "apps/api/src/cli/bootstrap.ts"]
+    environment:
+      <<: *app-env
+      # Only the bootstrap container needs these, so they stay out of the long-running services' environments.
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+    volumes:
+      - assets-data:/data/assets
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
+  api:
+    <<: *hardened
+    mem_limit: 1g
+    image: openmanga-app:1
+    restart: unless-stopped
+    command: ["bun", "apps/api/src/server.ts"]
+    environment: *app-env
+    volumes:
+      - assets-data:/data/assets
+      - tmp-data:/data/tmp
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  worker:
+    <<: *hardened
+    mem_limit: 6g
+    image: openmanga-app:1
+    restart: unless-stopped
+    command: ["bun", "apps/worker/src/main.ts"]
+    # Let in-flight image requests (up to AI_IMAGE_TIMEOUT_MS) finish instead of being killed and paid for twice.
+    stop_grace_period: 6m
+    environment: *app-env
+    volumes:
+      - assets-data:/data/assets
+      - tmp-data:/data/tmp
+    healthcheck:
+      # The worker touches a heartbeat file every 30 s; stale for 2 min = event loop stuck or process wedged.
+      test: ["CMD-SHELL", "test -f /data/tmp/worker-heartbeat && [ $$(( $$(date +%s) - $$(stat -c %Y /data/tmp/worker-heartbeat) )) -lt 120 ]"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks: [internal]
+
+  nginx:
+    <<: *hardened
+    mem_limit: 256m
+    cap_add: ["CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "NET_BIND_SERVICE"]
+    build:
+      context: .
+      dockerfile: deploy/docker/nginx.Dockerfile
+    image: openmanga-nginx:1
+    restart: unless-stopped
+    ports:
+      - "${NGINX_BIND:-127.0.0.1}:${NGINX_PORT:-3480}:80"
+    volumes:
+      - assets-data:/data/assets:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal, edge]
+
+  cloudflared:
+    <<: *hardened
+    mem_limit: 256m
+    image: cloudflare/cloudflared:2025.8.1
+    restart: unless-stopped
+    user: "${CLOUDFLARED_UID:-65532}"
+    # http2 transport: QUIC/UDP is often blocked from Docker bridge networks.
+    command: ["tunnel", "--no-autoupdate", "--protocol", "${CLOUDFLARED_PROTOCOL:-http2}", "--config", "/etc/cloudflared/config.yml", "run"]
+    volumes:
+      - ${CLOUDFLARED_CONFIG:-./deploy/cloudflared/config.yml}:/etc/cloudflared/config.yml:ro
+      - ${CLOUDFLARED_CREDENTIALS:-./deploy/cloudflared/credentials.json}:/etc/cloudflared/credentials.json:ro
+    depends_on:
+      nginx:
+        condition: service_healthy
+    networks: [edge]
+    profiles: ["tunnel"]
+
+volumes:
+  postgres-data:
+  redis-data:
+  assets-data:
+  tmp-data:
+  kokoro-cache:
+
+networks:
+  internal:
+    name: openmanga_internal
+  edge:
+    name: openmanga_edge

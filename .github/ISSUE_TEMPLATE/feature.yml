@@ -1,0 +1,56 @@
+name: Feature request
+description: Suggest something OpenManga should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read [docs/ROADMAP.md](../blob/main/docs/ROADMAP.md) first. It lists what is planned and, more
+        usefully, what has been **deliberately not built** and why. If your request is in that second list, the
+        interesting thing to write is what makes your case different.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What are you trying to do, and what stops you? Describe the situation rather than the solution — it is often
+        possible to solve the problem in a way nobody thought to ask for.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+      description: Your suggested behaviour, and where in the app it would live.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today
+      description: Workarounds you are using, or other tools that handle this, and why they fall short.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Rough scope
+      description: Your best guess. It is only used for triage and being wrong costs nothing.
+      options:
+        - A setting or a default
+        - A change to an existing screen or export
+        - A new screen, export kind or pipeline stage
+        - A new provider or integration
+        - Not sure
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Would you be willing to implement it
+      description: Not a requirement. It just changes how the discussion goes.
+      options:
+        - label: I would be willing to open a pull request for this

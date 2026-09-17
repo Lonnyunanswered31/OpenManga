@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@font-face {
+  font-family: "Comic Neue";
+  src: url("/app/fonts/ComicNeue-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Comic Neue";
+  src: url("/app/fonts/ComicNeue-Bold.otf") format("opentype");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "DejaVu Sans";
+  src: url("/app/fonts/DejaVuSans.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "DejaVu Sans";
+  src: url("/app/fonts/DejaVuSans-Bold.ttf") format("truetype");
+  font-weight: 700 900;
+  font-display: swap;
+}
+
+@theme {
+  --color-accent-50: #eef4ff;
+  --color-accent-100: #dbe6fe;
+  --color-accent-300: #93b4fd;
+  --color-accent-400: #6090fa;
+  --color-accent-500: #3b6cf6;
+  --color-accent-600: #2553eb;
+  --color-accent-700: #1d42d8;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #f1f3f6;
+  --border: #e2e5ea;
+  --text: #14171c;
+  --muted: #5b6472;
+}
+.dark {
+  --bg: #0d0f13;
+  --panel: #151920;
+  --panel-2: #1b2029;
+  --border: #272d38;
+  --text: #e8ebf0;
+  --muted: #8d96a6;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+@utility card {
+  @apply rounded-xl border bg-[var(--panel)] border-[var(--border)];
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500 whitespace-nowrap;
+}
+@utility btn-primary {
+  @apply btn bg-accent-600 text-white hover:bg-accent-700;
+}
+@utility btn-secondary {
+  @apply btn border border-[var(--border)] bg-[var(--panel)] hover:bg-[var(--panel-2)];
+}
+@utility btn-ghost {
+  @apply btn hover:bg-[var(--panel-2)];
+}
+@utility btn-danger {
+  @apply btn bg-red-600 text-white hover:bg-red-700;
+}
+@utility input {
+  @apply w-full rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-1.5 text-sm outline-none focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 placeholder:text-[var(--muted)];
+}
+@utility label {
+  @apply mb-1 block text-xs font-medium text-[var(--muted)];
+}
+@utility muted {
+  color: var(--muted);
+}
+@utility chip {
+  @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium;
+}

@@ -1,0 +1,170 @@
+import { z } from "zod";
+
+const unit = z.number().min(0).max(1);
+
+export const Frame = z.object({ x: unit, y: unit, width: z.number().gt(0).max(1), height: z.number().gt(0).max(1) });
+export type Frame = z.infer<typeof Frame>;
+
+/** Crop/scale of artwork inside a panel frame. focal = normalized point of the image that sits at frame center. */
+export const ImageTransform = z.object({
+  focalX: unit.default(0.5),
+  focalY: unit.default(0.5),
+  scale: z.number().min(1).max(8).default(1),
+});
+export type ImageTransform = z.infer<typeof ImageTransform>;
+
+export const BubbleType = z.enum(["normal", "thought", "shout", "whisper", "narration", "system"]);
+export type BubbleType = z.infer<typeof BubbleType>;
+
+/** Vector speech bubble. Geometry is normalized to the page (0..1). */
+export const Bubble = z.object({
+  type: BubbleType.default("normal"),
+  font: z.string().default("Comic Neue"),
+  fontSize: z.number().min(4).max(200).default(28),
+  lineHeight: z.number().min(0.8).max(3).default(1.2),
+  align: z.enum(["left", "center", "right"]).default("center"),
+  padding: z.number().min(0).max(200).default(18),
+  background: z.string().default("#ffffff"),
+  textColor: z.string().default("#111111"),
+  borderColor: z.string().default("#111111"),
+  borderWidth: z.number().min(0).max(20).default(3),
+  tail: z.boolean().default(true),
+  tailTarget: z.object({ x: unit, y: unit }).optional(),
+  rotation: z.number().min(-180).max(180).default(0),
+  x: unit,
+  y: unit,
+  width: z.number().gt(0).max(1),
+  height: z.number().gt(0).max(1),
+  zIndex: z.number().int().default(10),
+});
+export type Bubble = z.infer<typeof Bubble>;
+
+export const SfxStyle = z.object({
+  font: z.string().default("DejaVu Sans"),
+  fontSize: z.number().min(8).max(400).default(72),
+  fill: z.string().default("#ffdd00"),
+  stroke: z.string().default("#111111"),
+  strokeWidth: z.number().min(0).max(30).default(6),
+  rotation: z.number().min(-180).max(180).default(-8),
+  scale: z.number().min(0.1).max(10).default(1),
+  opacity: z.number().min(0).max(1).default(1),
+  x: unit,
+  y: unit,
+  zIndex: z.number().int().default(20),
+});
+export type SfxStyle = z.infer<typeof SfxStyle>;
+
+/** Style fields of a text element that can have a per-type project default. */
+export const LetteringStyle = z.object({
+  font: z.string().min(1).max(64).optional(),
+  fontSize: z.number().min(4).max(200).optional(),
+  lineHeight: z.number().min(0.8).max(3).optional(),
+  align: z.enum(["left", "center", "right"]).optional(),
+  padding: z.number().min(0).max(200).optional(),
+  background: z.string().max(32).optional(),
+  textColor: z.string().max(32).optional(),
+  borderColor: z.string().max(32).optional(),
+  borderWidth: z.number().min(0).max(20).optional(),
+});
+export type LetteringStyle = z.infer<typeof LetteringStyle>;
+
+export const SfxDefaults = z.object({
+  font: z.string().min(1).max(64).optional(),
+  fontSize: z.number().min(8).max(400).optional(),
+  fill: z.string().max(32).optional(),
+  stroke: z.string().max(32).optional(),
+  strokeWidth: z.number().min(0).max(30).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+});
+export type SfxDefaults = z.infer<typeof SfxDefaults>;
+
+/** Project lettering defaults. Missing fields fall back to the built-in defaults in @openmanga/domain. */
+export const LetteringDefaults = z.object({
+  /** Create speech bubbles, on-page narration captions and SFX when a chapter plan is applied. */
+  autoPlace: z.boolean().optional(),
+  autoFit: z.boolean().optional(),
+  maxWidth: z.number().min(0.1).max(1).optional(),
+  types: z
+    .object({
+      normal: LetteringStyle.optional(),
+      thought: LetteringStyle.optional(),
+      shout: LetteringStyle.optional(),
+      whisper: LetteringStyle.optional(),
+      narration: LetteringStyle.optional(),
+      system: LetteringStyle.optional(),
+    })
+    .optional(),
+  sfx: SfxDefaults.optional(),
+});
+export type LetteringDefaults = z.infer<typeof LetteringDefaults>;
+
+/** Film projects: every page is one full-frame 16:9 shot rendered as a narrated Ken Burns video. */
+export const ProjectFormat = z.enum(["comic", "film"]);
+export type ProjectFormat = z.infer<typeof ProjectFormat>;
+export const FILM_PAGE = { pageWidth: 1920, pageHeight: 1080, pageMargin: 0, pageGutter: 0 } as const;
+
+export const ProjectSettings = z.object({
+  format: ProjectFormat.default("comic"),
+  pageWidth: z.number().int().min(256).max(8000).default(1600),
+  pageHeight: z.number().int().min(256).max(20000).default(2400),
+  pageGutter: z.number().min(0).max(0.1).default(0.015),
+  pageMargin: z.number().min(0).max(0.2).default(0.03),
+  imageQuality: z.enum(["low", "medium", "high"]).default("low"),
+  narrationVoice: z.string().default("af_heart"),
+  narrationSpeed: z.number().min(0.5).max(2).default(1),
+  /** Narration length target; ~21 words is about 6 seconds of Kokoro speech per panel. */
+  narrationWordsPerPanel: z.number().int().min(5).max(80).default(21),
+  referenceMaxWidth: z.number().int().min(16).max(2048).optional(),
+  referenceMaxHeight: z.number().int().min(16).max(2048).optional(),
+  webtoonGap: z.number().int().min(0).max(1000).default(40),
+  webtoonChunkHeight: z.number().int().min(1000).max(40000).default(12000),
+  webtoonWidth: z.number().int().min(320).max(2000).default(800),
+  worldNotes: z.string().default(""),
+  author: z.string().default(""),
+  lettering: LetteringDefaults.optional(),
+  /** Hard spending ceiling for AI generation in USD (estimated from recorded usage). Unset = no cap. */
+  budgetUsd: z.number().min(0).max(1_000_000).nullable().optional(),
+  /**
+   * When a panel is blocked by an image provider's content filter, retry it ONCE on another of your own keys and
+   * flag the panel for review. Not general failover: only content-policy blocks, and the switch is always visible.
+   * Opt-in, and it must name one of your credentials — there are no shared server keys to fall back to.
+   */
+  contentPolicyFallback: z
+    .object({
+      enabled: z.boolean().default(false),
+      credentialId: z.string().uuid().nullable().default(null),
+      provider: z.string().max(40).nullable().default(null),
+      model: z.string().max(200).default(""),
+    })
+    .optional(),
+  /** Silence after each narration segment, and after the last segment of a scene or chapter. */
+  narrationPauseMs: z.number().int().min(0).max(5000).default(350),
+  sceneBreakPauseMs: z.number().int().min(0).max(10000).default(700),
+  /** Style instruction for narration writing, kept so every chapter is written in the same voice. */
+  narrationStyle: z.string().max(500).default(""),
+  /** Opt-in vision check of generated panels (expected cast and headcount). Needs one of your vision-capable keys. */
+  consistencyCheck: z
+    .object({
+      enabled: z.boolean().default(false),
+      credentialId: z.string().uuid().nullable().default(null),
+      model: z.string().max(200).default(""),
+    })
+    .optional(),
+});
+export type ProjectSettings = z.infer<typeof ProjectSettings>;
+
+export const StyleDefinition = z.object({
+  summary: z.string().default(""),
+  lineTreatment: z.string().default(""),
+  colorPolicy: z.string().default(""),
+  shading: z.string().default(""),
+  detailLevel: z.string().default(""),
+  faceRendering: z.string().default(""),
+  backgroundRendering: z.string().default(""),
+  motionEffects: z.string().default(""),
+  contrast: z.string().default(""),
+  screenTones: z.string().default(""),
+  lighting: z.string().default(""),
+  exclusions: z.array(z.string()).default([]),
+});
+export type StyleDefinition = z.infer<typeof StyleDefinition>;

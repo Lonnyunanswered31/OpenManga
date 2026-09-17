@@ -1,0 +1,52 @@
+import type { GenerationKind } from "@openmanga/db";
+import type { Job } from "@openmanga/queue";
+import type { WorkerDeps } from "./context.ts";
+import { processExport } from "./handlers/export.ts";
+import { coverGeneration, panelEdit, panelGeneration, referenceGeneration } from "./handlers/image.ts";
+import { runMaintenance } from "./handlers/maintenance.ts";
+import { panelCheck } from "./handlers/qa.ts";
+import { chapterPlan, narrationText, pagePrompts, storyAnalysis, storyRewrite } from "./handlers/text.ts";
+import { processTts } from "./handlers/tts.ts";
+import { type GenerationJob, runGenerationJob } from "./lib/runner.ts";
+
+const GENERATION_HANDLERS: Record<
+  GenerationKind,
+  (deps: WorkerDeps, job: GenerationJob) => Promise<Record<string, unknown>>
+> = {
+  story_analysis: storyAnalysis,
+  story_rewrite: storyRewrite,
+  chapter_plan: chapterPlan,
+  page_prompts: pagePrompts,
+  narration_text: narrationText,
+  character_reference: referenceGeneration,
+  location_reference: referenceGeneration,
+  prop_reference: referenceGeneration,
+  style_reference: referenceGeneration,
+  panel_generation: panelGeneration,
+  panel_edit: panelEdit,
+  panel_check: panelCheck,
+  cover: coverGeneration,
+};
+
+export function generationProcessor(deps: WorkerDeps) {
+  return (job: Job) =>
+    runGenerationJob(deps, job, (g) => {
+      const handler = GENERATION_HANDLERS[g.kind];
+      if (!handler) throw new Error(`No handler for ${g.kind}`);
+      return handler(deps, g);
+    });
+}
+
+export const ttsProcessor = (deps: WorkerDeps) => (job: Job) => processTts(deps, job);
+export const exportProcessor = (deps: WorkerDeps) => (job: Job) => processExport(deps, job);
+
+/** asset-processing: thumbnails/derivatives on demand; maintenance: cleanup. */
+export function assetProcessor(deps: WorkerDeps) {
+  return async (job: Job) => {
+    const asset = await deps.assets.get(String(job.data.assetId));
+    if (!asset) return;
+    if (job.name === "thumbnail") await deps.assets.ensureThumbnail(asset);
+    if (job.name === "prompt_ref") await deps.assets.ensurePromptReference(asset, deps.assets.referenceParams());
+  };
+}
+export const maintenanceProcessor = (deps: WorkerDeps) => () => runMaintenance(deps);

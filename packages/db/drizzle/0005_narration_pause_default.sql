@@ -1,0 +1,1 @@
+ALTER TABLE "narration_segments" ALTER COLUMN "pause_after_ms" SET DEFAULT 350;

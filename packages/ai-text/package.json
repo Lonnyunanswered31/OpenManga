@@ -1,0 +1,16 @@
+{
+  "name": "@openmanga/ai-text",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "^4.1.0",
+    "@openmanga/logger": "workspace:*",
+    "@openmanga/domain": "workspace:*",
+    "@openmanga/prompts": "workspace:*",
+    "@openmanga/schemas": "workspace:*",
+    "@openmanga/testing": "workspace:*"
+  }
+}

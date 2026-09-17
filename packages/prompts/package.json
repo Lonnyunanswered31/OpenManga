@@ -1,0 +1,12 @@
+{
+  "name": "@openmanga/prompts",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@openmanga/schemas": "workspace:*",
+    "zod": "^4.1.0"
+  }
+}

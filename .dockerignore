@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+.git
+.env
+data
+backups
+tests/e2e/test-results
+tests/e2e/playwright-report
+services/kokoro
+*.log

@@ -1,0 +1,87 @@
+# Storage
+
+Every binary the system produces or accepts — references, panel art, masks, thumbnails, audio, exports — is one
+`assets` row plus one opaque file. Derived renditions are `asset_variants` rows that can be deleted and recreated.
+`docs/DATA_MODEL.md` has the columns; this document covers the file layer.
+
+## AssetStorage
+
+`packages/storage/src/index.ts` defines the interface and its only implementation, `LocalAssetStorage`, rooted at
+`ASSET_ROOT` (`/data/assets`, the `assets-data` Docker volume):
+
+```ts
+put(key, data): Promise<StoredObjectMetadata>
+putFile(key, srcPath)      // copy a file from disk without buffering it in memory (exports, video)
+read(key): Promise<Uint8Array>
+exists(key) / delete(key) / getMetadata(key)
+internalPath(key): string  // relative path handed to nginx for X-Accel-Redirect
+```
+
+Writes go to a `.tmp-<random>` sibling and are then renamed, so a reader never sees a half-written file. `delete`
+ignores a missing file. An S3/R2 implementation can be added without touching application code; `internalPath` would
+become a signed URL or redirect instead.
+
+Keys are server-generated, opaque and sharded: `newStorageKey(prefix, ext)` returns
+`<type>/<aa>/<bb>/<32 hex>.<ext>` from 16 random bytes. Every key is validated against
+`/^[a-z0-9][a-z0-9/_.-]*$/` with no `..`, no `//` and no trailing slash, and the resolved path must stay under the
+root. An uploaded filename is never used in a path — it is kept only as metadata.
+
+## Serving (`/cdn`)
+
+`GET /cdn/a/:assetId[?v=thumbnail|preview|web|prompt_ref][&download=name]`
+(`apps/api/src/routes/assets.ts`)
+
+1. nginx proxies the request to the API with `X-Accel-Enabled: 1`, and strips that header from client requests
+   arriving anywhere else.
+2. The API loads the asset by its opaque id. Unless the asset is `public` (nothing creates one — see
+   `docs/SECURITY.md`) it requires a session (401) and `projectAccess(…, "read")`, which answers 404 for a
+   non-member.
+3. It resolves the requested variant. A missing `thumbnail`, `preview` or `web` is generated on the spot with Sharp
+   (WebP, fitting inside 384 / 1024 / 2048 px, quality 80 / 85 / 85) and cached as a variant keyed by
+   `sha256(sourceSha:variant:maxSize:webp:qN)`. `prompt_ref` is not generated here — see
+   `docs/IMAGE_REFERENCES.md`.
+4. It replies with `content-type`, an `etag` derived from the content hash plus variant, `cache-control`
+   (`private, max-age=3600`), `x-content-type-options: nosniff`, a `default-src 'none'` CSP, and
+   `X-Accel-Redirect: /_protected_assets/<key>` with an empty body. A matching `if-none-match` gets a 304.
+   `download=<name>` is sanitized to `[\w.\- ]`, truncated to 120 characters, and set as a
+   `content-disposition: attachment`.
+5. nginx serves the file from the read-only volume through an `internal` location. Direct requests to
+   `/_protected_assets/` return 404.
+
+Without nginx (tests, `bun dev`) the header is absent and the API streams the bytes itself, so the same route works
+either way.
+
+## Uploads
+
+PNG, JPEG and WebP only, decided by magic bytes (`sniffImageMime`), never by the declared content type; anything else
+is 415. Size is checked against both `content-length` and the parsed file against `UPLOAD_MAX_BYTES` (15 MiB by
+default) and answers 413. The bytes are then re-encoded with Sharp — `rotate()` bakes in EXIF orientation and the
+re-encode drops all other metadata including GPS — with a 64 MP input limit as a pixel-bomb guard
+(`apps/api/src/lib/uploads.ts`, `packages/image-utils/src/index.ts`).
+
+## Derivatives and retention
+
+The hourly `maintenance` queue job (`apps/worker/src/handlers/maintenance.ts`, scheduled by
+`upsertJobScheduler("hourly-cleanup", { every: 3600_000 })`, also triggerable via `POST /api/admin/maintenance`) is
+the only thing that deletes on a timer:
+
+| Data | Policy |
+| --- | --- |
+| Canonical references, active panel art, panel version history | kept |
+| Thumbnail / preview / web variants | generated on demand, cached, kept |
+| `prompt_ref` variants | deleted after 30 days without use, recreated on demand |
+| Export files | the asset is deleted once `exports.expires_at` passes; the job row is kept as history |
+| Trashed assets | hard-deleted 30 days after `deleted_at`, never when `locked` or when a panel still points at them |
+| Temp files under `TEMP_ROOT` | per-job directories removed after use; anything older than 6 hours swept |
+| Sessions | deleted when expired, or 7 days after being revoked |
+| Password reset tokens | deleted once used, or 1 day after expiry |
+| Jobs stuck in `processing` | force-failed after 2 hours so the UI and retries unblock |
+| Published outbox rows | deleted after 7 days |
+
+The same cycle re-encrypts provider credentials onto the current key (`docs/SECURITY.md`).
+
+## Deletion
+
+Projects and important assets go to trash first (`deleted_at`); permanent deletion requires that trashing step and
+then removes both rows and files. `assets.hardDelete` removes an asset's variants with it. Panel artwork versions
+cannot be deleted while they are a panel's active artwork.

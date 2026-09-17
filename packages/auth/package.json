@@ -1,0 +1,12 @@
+{
+  "name": "@openmanga/auth",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@openmanga/db": "workspace:*",
+    "zod": "^4.1.0"
+  }
+}

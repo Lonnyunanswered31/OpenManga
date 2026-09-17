@@ -1,0 +1,337 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { Plus, RotateCcw } from "lucide-react";
+import { useCallback, useState } from "react";
+import { get, patch, post } from "../../api/client.ts";
+import { qk, useAction } from "../../api/hooks.ts";
+import type { LocationCard, ProjectStyleRow, PropCard, Reference, StylePresetRow } from "../../api/types.ts";
+import {
+  AssetImage,
+  EmptyState,
+  ErrorBox,
+  fmt,
+  Modal,
+  PageHeader,
+  SaveIndicator,
+  Spinner,
+  StatusChip,
+  Tabs,
+  useAutosave,
+} from "../../components/ui.tsx";
+import { ReferencePanel } from "../cast/ReferencePanel.tsx";
+import { useProject, useProjectId } from "../project/ProjectLayout.tsx";
+
+type Tab = "locations" | "props" | "style" | "notes";
+
+export function WorldPage() {
+  const [tab, setTab] = useState<Tab>("locations");
+  return (
+    <div className="p-6">
+      <PageHeader title="World" subtitle="Recurring locations, props, art style and world notes." />
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { value: "locations", label: "Locations" },
+          { value: "props", label: "Props" },
+          { value: "style", label: "Style" },
+          { value: "notes", label: "World notes" },
+        ]}
+      />
+      {tab === "locations" && <EntityGrid kind="locations" />}
+      {tab === "props" && <EntityGrid kind="props" />}
+      {tab === "style" && <StyleTab />}
+      {tab === "notes" && <NotesTab />}
+    </div>
+  );
+}
+
+function EntityGrid({ kind }: { kind: "locations" | "props" }) {
+  const projectId = useProjectId();
+  const [trash, setTrash] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [summary, setSummary] = useState("");
+  const baseKey = kind === "locations" ? qk.locations(projectId) : qk.props(projectId);
+  const { data, error, isLoading, refetch } = useQuery({
+    queryKey: [...baseKey, trash],
+    queryFn: () =>
+      get<Record<string, (LocationCard | PropCard)[]>>(`/projects/${projectId}/${kind}${trash ? "?trash=1" : ""}`),
+  });
+  const create = useAction(
+    () => post(`/projects/${projectId}/${kind}`, { name: name.trim(), description: { summary } }),
+    {
+      invalidate: [baseKey],
+      success: "Created",
+      onSuccess: () => {
+        setCreating(false);
+        setName("");
+        setSummary("");
+      },
+    },
+  );
+  const restore = useAction((id: string) => post(`/${kind}/${id}/restore`), {
+    invalidate: [baseKey],
+    success: "Restored",
+  });
+  const list = data?.[kind] ?? [];
+  const singular = kind === "locations" ? "location" : "prop";
+  return (
+    <>
+      <div className="mb-4 flex gap-2">
+        <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
+          <Plus className="size-4" /> New {singular}
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => setTrash(!trash)}>
+          {trash ? "Show active" : "Trash"}
+        </button>
+      </div>
+      <ErrorBox error={error} onRetry={() => refetch()} />
+      {isLoading && <Spinner className="size-6" />}
+      {data && !list.length && (
+        <EmptyState title={trash ? "Trash is empty" : `No ${kind} yet`}>
+          {!trash &&
+            "Story analysis creates recurring ones automatically. Only important recurring items need references."}
+        </EmptyState>
+      )}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        {list.map((e) => (
+          <div key={e.id} className="card overflow-hidden">
+            <Link
+              to={
+                kind === "locations"
+                  ? "/projects/$projectId/world/locations/$entityId"
+                  : "/projects/$projectId/world/props/$entityId"
+              }
+              params={{ projectId, entityId: e.id }}
+              className="block"
+            >
+              <AssetImage assetId={e.previewAssetId} alt={e.name} className="aspect-[4/3] w-full" />
+              <div className="space-y-1 p-3">
+                <div className="truncate font-medium">{e.name}</div>
+                <div className="flex flex-wrap items-center gap-1 text-xs">
+                  {e.currentVersion && (
+                    <span className="muted">
+                      v{e.currentVersion.versionNumber} {e.currentVersion.status}
+                    </span>
+                  )}
+                  <StatusChip status={e.referenceStatus} label={`ref: ${e.referenceStatus}`} />
+                  <span className="muted">{e.appearances} panels</span>
+                </div>
+              </div>
+            </Link>
+            {trash && (
+              <button
+                type="button"
+                className="btn-secondary m-3 mt-0 w-[calc(100%-1.5rem)] text-xs"
+                onClick={() => restore.mutate(e.id)}
+              >
+                <RotateCcw className="size-3" /> Restore
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      <Modal
+        open={creating}
+        onClose={() => setCreating(false)}
+        title={`New ${singular}`}
+        footer={
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setCreating(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!name.trim() || create.isPending}
+              onClick={() => create.mutate()}
+            >
+              Create
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <label className="block">
+            <span className="label">Name</span>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="label">Summary</span>
+            <textarea className="input min-h-20" value={summary} onChange={(e) => setSummary(e.target.value)} />
+          </label>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+type StyleState = {
+  currentStyleId: string | null;
+  versions: (ProjectStyleRow & { preset: StylePresetRow | null })[];
+  references: Reference[];
+};
+
+function StyleTab() {
+  const projectId = useProjectId();
+  const qc = useQueryClient();
+  const style = useQuery({
+    queryKey: qk.style(projectId),
+    queryFn: () => get<StyleState>(`/projects/${projectId}/style`),
+  });
+  const presets = useQuery({
+    queryKey: ["style-presets"],
+    queryFn: () => get<{ presets: StylePresetRow[] }>("/style-presets"),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const current = style.data?.versions.find((v) => v.id === style.data.currentStyleId) ?? style.data?.versions[0];
+  const [presetKey, setPresetKey] = useState<string | null | undefined>(undefined);
+  const [custom, setCustom] = useState<string | undefined>(undefined);
+  const chosenKey = presetKey === undefined ? (current?.preset?.key ?? null) : presetKey;
+  const customText = custom ?? current?.customDescription ?? "";
+  const refresh = useCallback(() => qc.invalidateQueries({ queryKey: qk.style(projectId) }), [qc, projectId]);
+  const apply = useAction(
+    () => post(`/projects/${projectId}/style`, { stylePresetKey: chosenKey, customDescription: customText }),
+    {
+      invalidate: [qk.style(projectId), qk.project(projectId)],
+      success: "New style version applied",
+      onSuccess: () => {
+        setPresetKey(undefined);
+        setCustom(undefined);
+      },
+    },
+  );
+  if (style.isLoading || presets.isLoading) return <Spinner className="size-6" />;
+  if (style.error || presets.error) return <ErrorBox error={style.error ?? presets.error} />;
+  const chosen = presets.data?.presets.find((p) => p.key === chosenKey);
+  return (
+    <div className="space-y-5">
+      <section className="card p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <h2 className="mr-auto font-semibold">Art direction</h2>
+          {current && (
+            <span className="muted text-xs">
+              current: v{current.versionNumber} · {current.preset?.name ?? "custom"}
+            </span>
+          )}
+          <button type="button" className="btn-primary" disabled={apply.isPending} onClick={() => apply.mutate()}>
+            Apply as new version
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {presets.data?.presets.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setPresetKey(p.key)}
+              aria-pressed={p.key === chosenKey}
+              className={`rounded-lg border p-2 text-left text-sm ${p.key === chosenKey ? "border-accent-500 bg-accent-500/10" : "border-[var(--border)] hover:bg-[var(--panel-2)]"}`}
+            >
+              <div className="font-medium">{p.name}</div>
+              <div className="muted line-clamp-2 text-xs">{p.definition.summary}</div>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setPresetKey(null)}
+            aria-pressed={chosenKey === null}
+            className={`rounded-lg border p-2 text-left text-sm ${chosenKey === null ? "border-accent-500 bg-accent-500/10" : "border-[var(--border)]"}`}
+          >
+            <div className="font-medium">No preset</div>
+            <div className="muted text-xs">Custom description only</div>
+          </button>
+        </div>
+        {chosen && (
+          <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+            {(
+              [
+                "lineTreatment",
+                "colorPolicy",
+                "shading",
+                "detailLevel",
+                "faceRendering",
+                "backgroundRendering",
+                "motionEffects",
+                "contrast",
+                "screenTones",
+                "lighting",
+              ] as const
+            ).map((k) => (
+              <div key={k}>
+                <dt className="muted inline">{k.replace(/([A-Z])/g, " $1").toLowerCase()}: </dt>
+                <dd className="inline">{chosen.definition[k]}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        <label className="mt-3 block">
+          <span className="label">Project-specific style description</span>
+          <textarea
+            className="input min-h-20"
+            value={customText}
+            onChange={(e) => setCustom(e.target.value)}
+            placeholder="e.g. heavy rain atmosphere, teal and orange grading"
+          />
+        </label>
+      </section>
+      {current && (
+        <ReferencePanel
+          subject="style"
+          versionPath="project-styles"
+          versionId={current.id}
+          versionStatus={current.status}
+          references={style.data?.references ?? []}
+          onChanged={refresh}
+        />
+      )}
+      <section className="card p-4">
+        <h2 className="mb-2 font-semibold">Style history</h2>
+        <ul className="space-y-1 text-sm">
+          {style.data?.versions.map((v) => (
+            <li key={v.id} className="flex items-center gap-2">
+              <span className="font-medium">v{v.versionNumber}</span>
+              <StatusChip status={v.status} />
+              <span>{v.preset?.name ?? "custom"}</span>
+              <span className="muted truncate">{v.customDescription}</span>
+              <span className="muted ml-auto text-xs">{fmt.date(v.createdAt)}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function NotesTab() {
+  const projectId = useProjectId();
+  const { data } = useProject();
+  if (!data) return <Spinner />;
+  return <NotesEditor key={projectId} projectId={projectId} initial={data.project.settings.worldNotes} />;
+}
+
+function NotesEditor({ projectId, initial }: { projectId: string; initial: string }) {
+  const qc = useQueryClient();
+  const [notes, setNotes] = useState(initial);
+  const { state } = useAutosave(notes, async (v) => {
+    await patch(`/projects/${projectId}`, { settings: { worldNotes: v } });
+    qc.invalidateQueries({ queryKey: qk.project(projectId) });
+  });
+  return (
+    <section className="card p-4">
+      <div className="mb-2 flex items-center">
+        <h2 className="mr-auto font-semibold">World notes</h2>
+        <SaveIndicator state={state} />
+      </div>
+      <p className="muted mb-2 text-xs">
+        World rules, factions, technology, magic and uniforms. Included as structured context when planning chapters.
+      </p>
+      <textarea
+        className="input min-h-80 font-mono text-sm"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        aria-label="World notes"
+      />
+    </section>
+  );
+}

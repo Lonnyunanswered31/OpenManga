@@ -1,0 +1,1 @@
+ALTER TABLE "generation_jobs" ADD COLUMN "retried_by_job_id" uuid;

@@ -1,0 +1,20 @@
+# Development overrides: expose Postgres/Redis on loopback-only alternate ports for `bun dev` on the host,
+# enable the dev mailbox and mock AI. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${DEV_POSTGRES_PORT:-55432}:5432"
+  redis:
+    ports:
+      - "127.0.0.1:${DEV_REDIS_PORT:-56379}:6379"
+  kokoro:
+    ports:
+      - "127.0.0.1:${DEV_KOKORO_PORT:-58000}:8000"
+  api:
+    environment:
+      NODE_ENV: development
+      DEV_MAILBOX_ENABLED: "true"
+  worker:
+    environment:
+      NODE_ENV: development

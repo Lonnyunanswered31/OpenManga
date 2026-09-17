@@ -1,0 +1,12 @@
+{
+  "name": "@openmanga/mock-ai",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/server.ts"
+  },
+  "dependencies": {
+    "@openmanga/testing": "workspace:*",
+    "@openmanga/logger": "workspace:*"
+  }
+}

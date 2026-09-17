@@ -1,0 +1,43 @@
+/** Browser-safe serialized row types (Dates become ISO strings over JSON). */
+import type * as s from "./schema/index.ts";
+
+type Ser<T> = { [K in keyof T]: T[K] extends Date ? string : T[K] extends Date | null ? string | null : T[K] };
+
+export type UserRow = Ser<typeof s.users.$inferSelect>;
+export type ProjectRow = Ser<typeof s.projects.$inferSelect>;
+export type StoryRevisionRow = Ser<typeof s.storyRevisions.$inferSelect>;
+export type StoryAnalysisRow = Ser<typeof s.storyAnalyses.$inferSelect>;
+export type ChapterRow = Ser<typeof s.chapters.$inferSelect>;
+export type SceneRow = Ser<typeof s.scenes.$inferSelect>;
+export type StoryBeatRow = Ser<typeof s.storyBeats.$inferSelect>;
+export type CharacterRow = Ser<typeof s.characters.$inferSelect>;
+export type CharacterVersionRow = Ser<typeof s.characterVersions.$inferSelect>;
+export type CharacterOutfitRow = Ser<typeof s.characterOutfits.$inferSelect>;
+export type LocationRow = Ser<typeof s.locations.$inferSelect>;
+export type LocationVersionRow = Ser<typeof s.locationVersions.$inferSelect>;
+export type PropRow = Ser<typeof s.props.$inferSelect>;
+export type PropVersionRow = Ser<typeof s.propVersions.$inferSelect>;
+export type StylePresetRow = Ser<typeof s.stylePresets.$inferSelect>;
+export type ProjectStyleRow = Ser<typeof s.projectStyles.$inferSelect>;
+export type AssetRow = Ser<typeof s.assets.$inferSelect>;
+export type AssetVariantRow = Ser<typeof s.assetVariants.$inferSelect>;
+export type ReferenceAssetRow = Ser<typeof s.referenceAssets.$inferSelect>;
+export type PageRow = Ser<typeof s.pages.$inferSelect>;
+export type PanelRow = Ser<typeof s.panels.$inferSelect>;
+export type PanelSpecRow = Ser<typeof s.panelSpecs.$inferSelect>;
+export type DialogueLineRow = Ser<typeof s.dialogueLines.$inferSelect>;
+export type SoundEffectRow = Ser<typeof s.soundEffects.$inferSelect>;
+export type NarrationLineRow = Ser<typeof s.narrationLines.$inferSelect>;
+export type NarrationSegmentRow = Ser<typeof s.narrationSegments.$inferSelect>;
+export type AudioAssetRow = Ser<typeof s.audioAssets.$inferSelect>;
+export type AudioJobRow = Ser<typeof s.audioJobs.$inferSelect>;
+export type GenerationJobRow = Ser<typeof s.generationJobs.$inferSelect>;
+export type GenerationInputRow = Ser<typeof s.generationInputs.$inferSelect>;
+export type GenerationOutputRow = Ser<typeof s.generationOutputs.$inferSelect>;
+export type ExportJobRow = Ser<typeof s.exportJobs.$inferSelect>;
+export type ExportRow = Ser<typeof s.exportsTable.$inferSelect>;
+export type AiUsageRow = Ser<typeof s.aiUsage.$inferSelect>;
+export type DevEmailRow = Ser<typeof s.devEmails.$inferSelect>;
+export type AuditEventRow = Ser<typeof s.auditEvents.$inferSelect>;
+export type { ExportKind, GenerationKind } from "./schema/jobs.ts";
+export type { ReferenceKind } from "./schema/media.ts";

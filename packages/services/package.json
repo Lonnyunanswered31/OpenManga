@@ -1,0 +1,23 @@
+{
+  "name": "@openmanga/services",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@openmanga/config": "workspace:*",
+    "@openmanga/db": "workspace:*",
+    "@openmanga/domain": "workspace:*",
+    "@openmanga/image-utils": "workspace:*",
+    "@openmanga/logger": "workspace:*",
+    "@openmanga/prompts": "workspace:*",
+    "@openmanga/queue": "workspace:*",
+    "@openmanga/schemas": "workspace:*",
+    "@openmanga/storage": "workspace:*",
+    "@openmanga/ai-text": "workspace:*",
+    "@openmanga/ai-image": "workspace:*",
+    "@openmanga/audio": "workspace:*",
+    "@openmanga/auth": "workspace:*"
+  }
+}

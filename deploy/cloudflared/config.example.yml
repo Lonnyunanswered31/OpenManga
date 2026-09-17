@@ -1,0 +1,12 @@
+# Copy to deploy/cloudflared/config.yml (gitignored) and set your tunnel id.
+# Create with:  cloudflared tunnel create openmanga
+# Route DNS:    cloudflared --config /dev/null tunnel route dns <TUNNEL_ID> manga.example.com
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/credentials.json
+ingress:
+  - hostname: manga.example.com
+    service: http://nginx:80
+    originRequest:
+      connectTimeout: 10s
+      keepAliveTimeout: 90s
+  - service: http_status:404

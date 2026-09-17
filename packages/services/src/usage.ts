@@ -1,0 +1,94 @@
+import { aiUsage, type Database, type DbOrTx, providerRateSnapshots } from "@openmanga/db";
+import { estimateCostUsd, type RateSnapshot, selectRate } from "@openmanga/domain";
+
+export type UsageRecordInput = {
+  provider: string;
+  model: string;
+  operation: string;
+  requestId?: string | null;
+  projectId?: string | null;
+  generationJobId?: string | null;
+  userId?: string | null;
+  textInputTokens?: number;
+  textOutputTokens?: number;
+  imageInputTokens?: number;
+  imageOutputTokens?: number;
+  cachedInputTokens?: number;
+  /** Images produced by this call (flat per-image pricing). */
+  images?: number;
+  /** Characters synthesized by this call (speech providers bill per character). */
+  characters?: number;
+  rawUsage?: Record<string, unknown>;
+  latencyMs?: number;
+  success?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export class UsageService {
+  private cache: { at: number; rates: (RateSnapshot & { id: string })[] } | null = null;
+  constructor(private readonly db: Database) {}
+
+  async rates() {
+    if (this.cache && Date.now() - this.cache.at < 60_000) return this.cache.rates;
+    const rows = await this.db.select().from(providerRateSnapshots);
+    const rates = rows.map((r) => ({
+      id: r.id,
+      provider: r.provider,
+      model: r.model,
+      effectiveFrom: r.effectiveFrom,
+      textInputRate: Number(r.textInputRate),
+      cachedInputRate: Number(r.cachedInputRate),
+      textOutputRate: Number(r.textOutputRate),
+      imageInputRate: Number(r.imageInputRate),
+      imageOutputRate: Number(r.imageOutputRate),
+      imageUnitRate: Number(r.imageUnitRate),
+      characterRate: Number(r.characterRate),
+    }));
+    this.cache = { at: Date.now(), rates };
+    return rates;
+  }
+
+  invalidate() {
+    this.cache = null;
+  }
+
+  async rateFor(provider: string, model: string, at = new Date()) {
+    return selectRate(await this.rates(), provider, model, at) as (RateSnapshot & { id: string }) | null;
+  }
+
+  async record(u: UsageRecordInput, tx: DbOrTx = this.db) {
+    const rate = await this.rateFor(u.provider, u.model);
+    const tokens = {
+      textInputTokens: u.textInputTokens ?? 0,
+      textOutputTokens: u.textOutputTokens ?? 0,
+      imageInputTokens: u.imageInputTokens ?? 0,
+      imageOutputTokens: u.imageOutputTokens ?? 0,
+      cachedInputTokens: u.cachedInputTokens ?? 0,
+    };
+    // Persisted alongside the cost so an unpriced or mis-priced call can be re-costed later from what it actually did.
+    const quantities = { images: u.images ?? 0, characters: u.characters ?? 0 };
+    const cost = estimateCostUsd({ ...tokens, ...quantities }, rate);
+    const [row] = await tx
+      .insert(aiUsage)
+      .values({
+        provider: u.provider,
+        model: u.model,
+        operation: u.operation,
+        requestId: u.requestId ?? null,
+        projectId: u.projectId ?? null,
+        generationJobId: u.generationJobId ?? null,
+        userId: u.userId ?? null,
+        ...tokens,
+        ...quantities,
+        rawUsage: u.rawUsage ?? {},
+        rateSnapshotId: rate?.id ?? null,
+        rateSnapshot: rate ? { ...rate, effectiveFrom: new Date(rate.effectiveFrom).toISOString() } : null,
+        estimatedCostUsd: cost.toFixed(8),
+        latencyMs: u.latencyMs ?? 0,
+        success: u.success ?? true,
+        metadata: u.metadata ?? {},
+      })
+      .returning({ id: aiUsage.id });
+    return { id: row!.id, costUsd: cost };
+  }
+}

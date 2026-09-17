@@ -1,0 +1,48 @@
+{
+  "name": "openmanga",
+  "private": true,
+  "description": "Self-hosted studio that turns a story into a consistent AI-illustrated comic, webtoon or narrated video.",
+  "license": "Apache-2.0",
+  "repository": "github:pr0h0/OpenManga",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter './apps/api' --filter './apps/worker' --filter './apps/web' dev",
+    "test": "bun test packages apps/api apps/worker apps/web",
+    "test:integration": "bun test tests/integration",
+    "test:e2e": "bunx playwright test -c tests/e2e/playwright.config.ts",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
+    "build": "bun run --filter './apps/web' build",
+    "db:generate": "cd packages/db && bunx drizzle-kit generate",
+    "db:migrate": "bun packages/db/src/migrate.ts",
+    "db:seed": "bun apps/api/src/cli/seed.ts",
+    "admin:create": "bun apps/api/src/cli/admin-create.ts",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "backup": "./scripts/backup.sh",
+    "restore": "./scripts/restore.sh"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "@openmanga/config": "workspace:*",
+    "@openmanga/db": "workspace:*",
+    "@openmanga/domain": "workspace:*",
+    "@openmanga/image-utils": "workspace:*",
+    "@openmanga/queue": "workspace:*",
+    "@openmanga/schemas": "workspace:*",
+    "@openmanga/services": "workspace:*",
+    "@openmanga/testing": "workspace:*",
+    "@playwright/test": "^1.55.0",
+    "@types/bun": "^1.2.0",
+    "fflate": "^0.8.2",
+    "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "esbuild": "^0.25.12"
+  }
+}
