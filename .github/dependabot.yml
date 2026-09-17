@@ -1,0 +1,19 @@
+# Keeps the two things that are pinned by hand up to date. Bun lockfiles are not a Dependabot ecosystem, so the
+# JavaScript dependencies are checked with `bun audit` (see CONTRIBUTING.md) rather than here.
+version: 2
+updates:
+  # The release workflow can publish images under this project's name, so its actions are pinned to commit SHAs.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+  - package-ecosystem: docker
+    directories:
+      - /deploy/docker
+      - /services/kokoro
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps"

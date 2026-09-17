@@ -7,23 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-First public release. Everything below is the state of the project at the point it was opened up, so the list is
-longer than a normal release entry; later entries will only cover what changed.
+## [0.1.0] — 2026-09-17
 
-### Upgrading
-
-Two changes affect anyone who ran this before it was public:
-
-- **Session cookies are renamed.** Every existing session and CSRF cookie is invalidated, so **everyone has to log in
-  again once** after upgrading. No data is affected.
-- **Renamed to OpenManga.** Compose defaults for the database name and user, the compose networks and the queue key
-  prefix all changed with it. Drain the queues before upgrading, and to keep an existing database and asset volumes
-  set `COMPOSE_PROJECT_NAME`, `POSTGRES_USER` and `POSTGRES_DB` to their old values in `.env`.
-- **Registration is now closed by default.** Set `REGISTRATION_ENABLED=true` to restore open sign-up; otherwise
-  create accounts with `bun admin:create` or `INITIAL_ADMIN_*`.
-- **Server-level provider keys are gone.** Text and image generation is bring-your-own-key only. If you were relying
-  on a provider key in the server environment, add it as a credential in the app instead; the environment variables
-  for provider keys are no longer read.
+First public release, so the list below is the whole state of the project rather than a set of changes; later
+entries only cover what moved.
 
 ### Added
 

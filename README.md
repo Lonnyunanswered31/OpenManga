@@ -159,19 +159,19 @@ bun admin:create  # interactive admin creation
 ```
 
 ### Sample projects
-`bun db:seed` builds a demo from placeholder art. The real sample projects are published as browsable
-repositories — every panel, reference and narration file viewable in the GitHub file list — and import straight
-from GitHub's **Download ZIP**, wrapper directory and all:
+`bun db:seed` builds a demo from placeholder art, with no AI calls and no spend. To load a project with real
+artwork, import any `zip_package` export — your own, or a published sample set:
 
-- In the app: **Exports → Import project**, and upload the downloaded ZIP.
+- In the app: **Exports → Import project**, and upload the ZIP. A GitHub *Download ZIP* works as-is, wrapper
+  directory and all, so a project published as a browsable repository imports without repacking.
 - Or from the CLI, which also verifies the download:
   ```bash
   docker compose exec api bun db:seed --owner <user> \
-    --samples https://github.com/<owner>/<samples-repo>/archive/refs/heads/main.zip --sha256 <hex>
+    --samples https://example.com/a-project.zip --sha256 <hex>
   ```
-  Repeat `--samples` (and `--sha256`) per project. A local path works too. Each package is read or downloaded, its
+  Repeat `--samples` (and `--sha256`) per project; a local path works too. Each package is read or downloaded, its
   SHA-256 printed and checked against the matching `--sha256`, then handed to the same import path the UI uses — so
-  the worker must be running. No AI calls and no spend either way.
+  the worker must be running.
 
 Importing is also the way to move a project between installs: **Exports → ZIP package** produces exactly this
 shape.

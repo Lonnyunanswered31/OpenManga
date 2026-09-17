@@ -64,8 +64,14 @@ Run these before opening a pull request. CI runs the same set.
 | Unit tests | `bun test packages apps/api apps/worker apps/web` |
 | Integration tests | `bun test tests/integration` |
 | Web build | `cd apps/web && bun run build` |
+| Dependency advisories | `bun audit` |
 
 Both tsconfigs matter: the root one does not cover `apps/web`.
+
+`bun audit` is not in CI, because a new advisory should not fail an unrelated pull request — run it before a
+release, and treat anything reachable at runtime as a blocker. Dependabot keeps the GitHub Actions pins and the
+Dockerfile base images current (`.github/dependabot.yml`); it has no Bun lockfile ecosystem, which is why the
+JavaScript dependencies are checked this way.
 
 Integration tests need the compose Postgres and Redis running. They create and drop their own throwaway database and
 use Redis DB 5, so they will not touch your dev data:
