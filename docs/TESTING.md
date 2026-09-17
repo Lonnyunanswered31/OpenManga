@@ -116,5 +116,5 @@ services: install (`--frozen-lockfile`), `bunx biome ci .`, typecheck both tscon
 images. A second job checks every non-merge commit in a pull request carries a matching `Signed-off-by` line.
 E2E and the smoke script are not run in CI.
 
-`.github/workflows/release.yml` builds and pushes `openmanga-app`, `openmanga-nginx` and `openmanga-kokoro` to GHCR on
-a `v*` tag (linux/amd64 only; arm64 is a self-build — see `docs/REQUIREMENTS.md`).
+`.github/workflows/release.yml` builds and pushes `openmanga-app`, `openmanga-nginx` and `openmanga-kokoro` to
+`ghcr.io/pr0h0/` on a `v*` tag (linux/amd64 only; arm64 is a self-build — see `docs/REQUIREMENTS.md`).

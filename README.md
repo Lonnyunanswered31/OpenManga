@@ -82,9 +82,23 @@ Sign-up is closed by default (`REGISTRATION_ENABLED=false`): create the first ac
 to be able to sign up. New projects start with a $5 spend cap that asks for confirmation before it is exceeded;
 change or clear it in project settings.
 
-Prebuilt images are published to GHCR on tagged releases only (linux/amd64):
-`ghcr.io/<owner>/openmanga-app`, `-nginx` and `-kokoro`. Pin a tag and set `image:` in a compose override to run
-them instead of building locally; `main` is never published.
+Prebuilt images are published to GHCR on tagged releases only, linux/amd64 (`main` is never published):
+`ghcr.io/pr0h0/openmanga-app`, `ghcr.io/pr0h0/openmanga-nginx`, `ghcr.io/pr0h0/openmanga-kokoro`. To run them
+instead of building locally, pin a tag in a compose override:
+
+```yaml
+# docker-compose.override.yml — compose merges this automatically
+services:
+  migrate: { image: "ghcr.io/pr0h0/openmanga-app:0.1.0", build: !reset null }
+  api: { image: "ghcr.io/pr0h0/openmanga-app:0.1.0" }
+  worker: { image: "ghcr.io/pr0h0/openmanga-app:0.1.0" }
+  mock-ai: { image: "ghcr.io/pr0h0/openmanga-app:0.1.0" }
+  nginx: { image: "ghcr.io/pr0h0/openmanga-nginx:0.1.0", build: !reset null }
+  kokoro: { image: "ghcr.io/pr0h0/openmanga-kokoro:0.1.0", build: !reset null }
+```
+Then `docker compose pull && docker compose up -d`. Use a version that exists as a release tag, and pin it rather
+than `latest` so an upgrade is something you choose (each release also carries its `0.1` minor tag). `!reset`
+needs Compose v2.24 or newer; on older versions drop the `build:` keys and run `docker compose up -d --no-build`.
 
 ## Local development
 ```bash
