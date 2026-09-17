@@ -88,7 +88,7 @@ const date = (v: string | null | undefined) => {
 async function readManifest(uploadPath: string, dir: string, config: WorkerDeps["config"]) {
   const head = new Uint8Array(await Bun.file(uploadPath).slice(0, 4).arrayBuffer());
   const isZip = head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
-  if (!isZip) return { json: await Bun.file(uploadPath).text(), isZip, prefix: "" };
+  if (!isZip) return { json: await Bun.file(uploadPath).text(), isZip, prefix: "", otherManifests: [] };
   const names: string[] = [];
   let found: ExtractedFiles;
   try {
@@ -103,9 +103,9 @@ async function readManifest(uploadPath: string, dir: string, config: WorkerDeps[
       // No ratio guard on this pass: project.json is text and compresses well (a hand-zipped project_json export
       // runs 20x), and the entry cap above is what bounds it.
       limits: { ...limitsFrom(config), maxEntryBytes: MAX_MANIFEST_BYTES, maxRatio: Number.POSITIVE_INFINITY },
-      // Packages written by this app put project.json last, so this usually still reads the archive; a hand-made
-      // or GitHub-style package that puts it early stops here instead.
-      stopWhen: (found) => found.size > 0,
+      // Deliberately reads to the end rather than stopping at the first hit: an archive can hold several projects
+      // side by side (a repository of samples, zipped), and importing one of them silently is worse than the
+      // second pass over the file. Memory stays flat either way.
     });
   } catch (e) {
     if (e instanceof UnrecoverableError) throw e;
@@ -118,6 +118,8 @@ async function readManifest(uploadPath: string, dir: string, config: WorkerDeps[
     json: new TextDecoder().decode(await found.read(name)),
     isZip,
     prefix: name.slice(0, -"project.json".length),
+    /** Other manifests in the same archive, so importing one of several projects is not silent. */
+    otherManifests: names.filter((n) => n !== name),
   };
 }
 
@@ -181,6 +183,13 @@ export async function importProject(
     await progress(0.1);
     deps.logger.info("import stage", { stage: "extracted", bytes: files.bytes, rssMb: rssMb() });
     const result = await deps.db.transaction((tx) => restore(deps, tx, job, doc, files, progress));
+    // A repository ZIP can hold several projects side by side; one import job restores one of them.
+    if (upload.otherManifests.length)
+      result.warnings.push(
+        `The archive contains ${upload.otherManifests.length + 1} projects; this import restored ${
+          upload.prefix || "the one at the root"
+        } and ignored ${upload.otherManifests.join(", ")}. Import the others separately.`,
+      );
     deps.logger.info("import stage", { stage: "restored", assets: result.counts.assets, rssMb: rssMb() });
     return result;
   } catch (e) {

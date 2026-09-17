@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- An archive that holds several projects (a repository of sample projects, zipped) restored one of them without
+  saying so. The import now reports which project it restored and which it ignored.
+
 ## [0.1.0] — 2026-09-17
 
 First public release, so the list below is the whole state of the project rather than a set of changes; later

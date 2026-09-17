@@ -162,8 +162,9 @@ bun admin:create  # interactive admin creation
 `bun db:seed` builds a demo from placeholder art, with no AI calls and no spend. To load a project with real
 artwork, import any `zip_package` export — your own, or a published sample set:
 
-- In the app: **Exports → Import project**, and upload the ZIP. A GitHub *Download ZIP* works as-is, wrapper
-  directory and all, so a project published as a browsable repository imports without repacking.
+- In the app: **Projects → Import project**, and upload the ZIP. A GitHub *Download ZIP* works as-is, wrapper
+  directory and all, so a project published as a browsable repository imports without repacking. An archive holding
+  several projects restores one of them per import and says which it ignored.
 - Or from the CLI, which also verifies the download:
   ```bash
   docker compose exec api bun db:seed --owner <user> \

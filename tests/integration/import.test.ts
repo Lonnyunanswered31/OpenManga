@@ -319,6 +319,24 @@ describe("project import", () => {
     }
   }, 60_000);
 
+  test("an archive holding two projects imports one and says which it ignored", async () => {
+    const zip = await exportAndDownload(sourceId, "zip_package");
+    const entries = unzipSync(new Uint8Array(zip.data));
+    // What a repository of several sample projects looks like when GitHub zips it.
+    const wrapped = zipSync(
+      Object.fromEntries([
+        ...Object.entries(entries).map(([n, d]) => [`samples-main/comic/${n}`, d]),
+        ...Object.entries(entries).map(([n, d]) => [`samples-main/film/${n}`, d]),
+      ]),
+      { level: 0 },
+    );
+    const { projectId, job } = await importFile(wrapped, "samples-main.zip");
+    expect(`${job.status}:${job.failureReason ?? ""}`).toBe("completed:");
+    expect(job.result!.warnings.join(" ")).toContain("contains 2 projects");
+    // The one it did restore is whole, not a mixture of the two.
+    expect(await artworkShas(projectId)).toEqual(await artworkShas(sourceId));
+  }, 240_000);
+
   test("a multipart upload still works", async () => {
     const zip = await exportAndDownload(sourceId, "zip_package");
     const form = new FormData();
