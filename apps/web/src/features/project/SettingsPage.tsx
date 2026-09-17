@@ -594,10 +594,13 @@ function ConsistencySection({
           />
         </Field>
       </div>
-      {!creds.length && (
+      {!creds.length ? (
         <p className="text-xs text-amber-600">
           Add an API key with a vision model in Account → AI providers to use this.
         </p>
+      ) : (
+        cur.enabled &&
+        !cur.credentialId && <p className="text-xs text-amber-600">Pick a key above, or checks are skipped.</p>
       )}
     </section>
   );

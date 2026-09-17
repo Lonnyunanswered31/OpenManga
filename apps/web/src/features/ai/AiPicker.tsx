@@ -59,12 +59,21 @@ const supports = (kind: ProviderKind, cap: AiCapability) => {
 };
 
 /**
+ * The key a run will actually use: the remembered one, else the first usable one when the server has no default
+ * of its own (the normal BYOK case — otherwise a run would 422 until the user opened the picker).
+ */
+export function effectiveCredential(cap: AiCapability, c: Choice, o: AiOptions | undefined) {
+  const creds = (o?.credentials ?? []).filter((x) => supports(x.kind, cap));
+  return creds.find((x) => x.id === c.credentialId) ?? (o && !o.defaults[cap] ? creds[0] : undefined) ?? null;
+}
+
+/**
  * Request body fragment for the current choice of a capability. Falls back to the server default when the
  * remembered key was deleted. For narration voice, also returns the chosen voice.
  */
-export function aiBody(cap: AiCapability, credentials: Credential[] | undefined) {
+export function aiBody(cap: AiCapability, o: AiOptions | undefined) {
   const c = useAiChoices.getState()[cap];
-  const valid = c.credentialId && credentials?.some((x) => x.id === c.credentialId) ? c.credentialId : null;
+  const valid = effectiveCredential(cap, c, o)?.id ?? null;
   if (!valid && !c.model.trim()) return {};
   const body: { ai: { credentialId: string | null; model: string | null }; voice?: string } = {
     ai: { credentialId: valid, model: c.model.trim() || null },
@@ -77,11 +86,11 @@ export function aiBody(cap: AiCapability, credentials: Credential[] | undefined)
 export function useAiBody(cap: AiCapability) {
   const opts = useAiOptions();
   useAiChoices((s) => s[cap]);
-  return () => aiBody(cap, opts.data?.credentials);
+  return () => aiBody(cap, opts.data);
 }
 
 function choiceLabel(cap: AiCapability, c: Choice, o: AiOptions | undefined) {
-  const cred = c.credentialId ? o?.credentials.find((x) => x.id === c.credentialId) : undefined;
+  const cred = effectiveCredential(cap, c, o);
   if (cred) {
     const cat = providerCatalog(cred.kind);
     const models = cap === "text" ? cat?.textModels : cap === "image" ? cat?.imageModels : cat?.ttsModels;
@@ -101,7 +110,7 @@ export function ModelPicker({ cap }: { cap: AiCapability }) {
   const choice = useAiChoices((s) => s[cap]);
   const setChoice = useAiChoices((s) => s.set);
   const creds = (opts.data?.credentials ?? []).filter((c) => supports(c.kind, cap));
-  const cred = creds.find((c) => c.id === choice.credentialId) ?? null;
+  const cred = effectiveCredential(cap, choice, opts.data);
   const models = useQuery({
     queryKey: ["ai-models", cred?.id, cap],
     queryFn: () => get<{ models: string[] }>(`/ai/credentials/${cred!.id}/models?capability=${cap}`),
@@ -220,6 +229,8 @@ export function AiChip({ cap, className }: { cap: AiCapability; className?: stri
   const opts = useAiOptions();
   const choice = useAiChoices((s) => s[cap]);
   const [open, setOpen] = useState(false);
+  // Chips often sit in a modal footer, where a popover below the button falls outside the viewport.
+  const [up, setUp] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -235,13 +246,21 @@ export function AiChip({ cap, className }: { cap: AiCapability; className?: stri
         aria-expanded={open}
         aria-label={`${cap} model: ${choiceLabel(cap, choice, opts.data)}`}
         title="Choose provider and model for this run"
-        onClick={() => setOpen((o) => !o)}
+        onClick={(e) => {
+          setUp(e.currentTarget.getBoundingClientRect().bottom + 300 > window.innerHeight);
+          setOpen((o) => !o);
+        }}
       >
         <Cpu className="size-3.5 shrink-0" />
         <span className="truncate">{choiceLabel(cap, choice, opts.data)}</span>
       </button>
       {open && (
-        <div className="card absolute right-0 z-30 mt-1 w-80 max-w-[90vw] p-3 shadow-xl">
+        <div
+          className={clsx(
+            "card absolute right-0 z-30 w-80 max-w-[90vw] p-3 shadow-xl",
+            up ? "bottom-full mb-1" : "top-full mt-1",
+          )}
+        >
           <ModelPicker cap={cap} />
         </div>
       )}

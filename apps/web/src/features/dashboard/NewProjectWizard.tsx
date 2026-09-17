@@ -5,7 +5,7 @@ import { useState } from "react";
 import { get, post } from "../../api/client.ts";
 import type { JobDetail, StoryAnalysisRow, StylePresetRow } from "../../api/types.ts";
 import { clsx, ErrorBox, Field, PageHeader, Spinner } from "../../components/ui.tsx";
-import { useAiBody } from "../ai/AiPicker.tsx";
+import { AiChip, useAiBody } from "../ai/AiPicker.tsx";
 import { AnalysisReview } from "../story/AnalysisReview.tsx";
 
 const TYPES = [
@@ -266,7 +266,8 @@ export function NewProjectWizard() {
             <button type="button" className="btn-secondary" onClick={() => setStep(0)}>
               <ArrowLeft className="size-4" /> Back
             </button>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
+              <AiChip cap="text" />
               <button type="button" className="btn-secondary" disabled={busy} onClick={() => createAndAnalyze(false)}>
                 Create without analysis
               </button>

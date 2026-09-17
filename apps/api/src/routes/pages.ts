@@ -1301,12 +1301,9 @@ pageRoutes.post("/panels/:id/check", async (c) => {
   const { ai } = await body(c, CheckInput);
   if (!panel.activeArtworkAssetId) throw conflict("Panel has no artwork to check");
   const cc = project.settings.consistencyCheck;
-  const choice =
-    ai?.credentialId || ai?.provider || ai?.model
-      ? ai
-      : cc
-        ? { credentialId: cc.credentialId, model: cc.model || null }
-        : null;
+  // The project's own vision key wins: it was picked for this job, while `ai` is whatever the page's text picker
+  // happens to hold, which may well be a model that cannot read images.
+  const choice = cc?.credentialId ? { credentialId: cc.credentialId, model: cc.model || null } : (ai ?? null);
   await assertBudget(c, project.id);
   const run = await textRun(c, choice ?? null);
   const deps = c.get("deps");

@@ -14,6 +14,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   caller gets the 413 that names the raw-body alternative.
 - An archive that holds several projects (a repository of sample projects, zipped) restored one of them without
   saying so. The import now reports which project it restored and which it ignored.
+- Every generation was refused with "this server has no shared API keys" until you opened the model picker and
+  chose a key by hand, even with keys saved. A run now uses your first key that supports the capability unless you
+  pick another, and the chip says which key that is.
+- The model picker opened below its button, which put it off-screen when the chip sat in a dialog footer (the
+  cover dialog, panel edit, story rewrite). It now opens upwards when there is no room below.
+- A per-line narration re-synthesis ignored the chosen voice provider and fell back to local TTS — and failed
+  outright with `TTS_ENABLED=false`, even with a cloud voice key. It now uses the same choice as the chapter.
+- The manual panel consistency check sent no provider choice at all, so it was refused unless the project had a
+  vision key configured in its settings. The project's key still wins when set, since a text-only model cannot
+  read the panel.
+- The new-project wizard analysed the story with no way to choose the model; it now has the same picker as the
+  story page. Enabling the consistency check without picking a key now warns instead of silently skipping.
 
 ## [0.1.0] — 2026-09-17
 

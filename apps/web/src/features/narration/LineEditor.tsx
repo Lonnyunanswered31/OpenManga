@@ -4,6 +4,7 @@ import { assetUrl, del, patch, post } from "../../api/client.ts";
 import { useAction } from "../../api/hooks.ts";
 import type { NarrationDoc, NarrationSegment, Voice } from "../../api/types.ts";
 import { clsx, fmt, SaveIndicator, StatusChip, useAutosave } from "../../components/ui.tsx";
+import { useAiBody } from "../ai/AiPicker.tsx";
 
 type Line = NarrationDoc["lines"][number];
 type PanelOption = { id: string; label: string };
@@ -127,6 +128,7 @@ function SegmentRow({
   active: boolean;
   defaults: { voice: string; speed: number };
 }) {
+  const aiTts = useAiBody("tts");
   const [text, setText] = useState(seg.text);
   const ref = useRef<HTMLTextAreaElement>(null);
   const serverText = useRef(seg.text);
@@ -142,7 +144,8 @@ function SegmentRow({
   const update = useAction((body: Record<string, unknown>) => patch(`/narration-segments/${seg.id}`, body), {
     invalidate,
   });
-  const synth = useAction(() => post(`/narration-segments/${seg.id}/synthesize`, {}), { invalidate });
+  // Same provider/voice the page's narration chip picked: without it a re-synth silently drops back to local TTS.
+  const synth = useAction(() => post(`/narration-segments/${seg.id}/synthesize`, aiTts()), { invalidate });
   const split = useAction((at: number) => post(`/narration-segments/${seg.id}/split`, { at }), { invalidate });
   const merge = useAction(() => post(`/narration-segments/${seg.id}/merge-next`), { invalidate });
   const status = segmentStatus(seg);

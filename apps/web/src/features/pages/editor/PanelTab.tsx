@@ -6,6 +6,7 @@ import { get, patch, post, put } from "../../../api/client.ts";
 import { qk, useAction } from "../../../api/hooks.ts";
 import type { EditorPanel, LocationCard, PageDocument } from "../../../api/types.ts";
 import { clsx, Field, StatusChip, TagInput } from "../../../components/ui.tsx";
+import { useAiBody } from "../../ai/AiPicker.tsx";
 import { useProjectId } from "../../project/ProjectLayout.tsx";
 import { PreviewVideoButton } from "../../video/VideoPreview.tsx";
 import { useEditor } from "./store.ts";
@@ -515,7 +516,9 @@ type Qa = { verdict: "ok" | "mismatch"; problems: string[]; stale?: boolean; mod
 
 /** Result of the automatic cast/headcount check, plus a manual "check now". */
 function QaBadge({ panelId, qa, hasArt }: { panelId: string; qa: Qa | null; hasArt: boolean }) {
-  const check = useAction(() => post(`/panels/${panelId}/check`), { success: "Consistency check queued" });
+  // Falls back to a text key of the caller's; the project's configured vision key still takes priority server-side.
+  const aiText = useAiBody("text");
+  const check = useAction(() => post(`/panels/${panelId}/check`, aiText()), { success: "Consistency check queued" });
   if (!hasArt) return null;
   const label = !qa ? "not checked" : qa.stale ? "check outdated" : qa.verdict === "ok" ? "cast OK" : "cast mismatch";
   const cls =
