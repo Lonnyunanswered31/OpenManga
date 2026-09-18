@@ -1,4 +1,4 @@
-import type { CharacterBible } from "@openmanga/schemas";
+import type { CharacterBible, ImageDescription } from "@openmanga/schemas";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { AlertTriangle, GitBranch, Info, Plus, Trash2, X } from "lucide-react";
@@ -14,9 +14,11 @@ import {
   SaveIndicator,
   Spinner,
   StatusChip,
+  toast,
   useAutosave,
 } from "../../components/ui.tsx";
 import { useProjectId } from "../project/ProjectLayout.tsx";
+import { DescribeImageButton } from "../vision/DescribeImageButton.tsx";
 import { FieldGroup, ListRow, TextRow, VERSION_ACTIONS } from "./fields.tsx";
 import { OutfitsEditor } from "./OutfitsEditor.tsx";
 import { ReferencePanel } from "./ReferencePanel.tsx";
@@ -150,7 +152,7 @@ export function CharacterDetailPage() {
             <h2 className="mb-2 text-sm font-semibold">Versions</h2>
             <ul className="space-y-1">
               {versions.map((v) => (
-                <li key={v.id}>
+                <li key={v.id} className="group relative">
                   <button
                     type="button"
                     onClick={() => setSelected(v.id)}
@@ -167,6 +169,28 @@ export function CharacterDetailPage() {
                       {v.panelCount} panel{v.panelCount === 1 ? "" : "s"} · {v.changeNote || "—"}
                     </div>
                   </button>
+                  {v.status === "draft" && versions.length > 1 && v.panelCount === 0 && (
+                    <button
+                      type="button"
+                      aria-label={`Delete draft v${v.versionNumber}`}
+                      title="Delete this draft version"
+                      className="btn-ghost absolute top-1 right-1 p-1 text-red-500 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!window.confirm(`Delete draft v${v.versionNumber}?`)) return;
+                        try {
+                          await del(`/character-versions/${v.id}`);
+                          if (selected === v.id) setSelected(null);
+                          await refresh();
+                          toast.success(`Deleted v${v.versionNumber}`);
+                        } catch (err) {
+                          toast.error(err);
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -204,6 +228,7 @@ export function CharacterDetailPage() {
             </form>
           </section>
           <OutfitsEditor
+            references={data.references}
             characterId={characterId}
             versionId={version?.id ?? null}
             outfits={data.outfits}
@@ -290,6 +315,7 @@ export function CharacterDetailPage() {
 }
 
 function BibleEditor({ version, onSaved }: { version: CharacterVersionRow; onSaved: () => void }) {
+  const projectId = useProjectId();
   const [bible, setBible] = useState<CharacterBible>(version.description);
   const editable = version.status === "draft";
   const { state } = useAutosave(
@@ -303,7 +329,26 @@ function BibleEditor({ version, onSaved }: { version: CharacterVersionRow; onSav
   const p = { value: bible, onChange: setBible, disabled: !editable };
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {editable && (
+          <DescribeImageButton
+            projectId={projectId}
+            aspect="character"
+            label="Fill from image"
+            title="Describe a character from a reference image"
+            className="btn-secondary px-2 py-1 text-xs"
+            onUse={(d: ImageDescription) => {
+              // Merge rather than replace: only fields the image actually described are written, so existing
+              // notes the model could not see survive.
+              const from = (d.character ?? {}) as Partial<CharacterBible>;
+              const filled = Object.fromEntries(
+                Object.entries(from).filter(([, v]) => (Array.isArray(v) ? v.length : String(v ?? "").trim())),
+              );
+              setBible((b) => ({ ...b, ...filled }) as CharacterBible);
+              toast.info(`Filled ${Object.keys(filled).length} field(s) from the image — review, then it autosaves`);
+            }}
+          />
+        )}
         <SaveIndicator state={state} />
       </div>
       <TextRow {...p} k="summary" label="Summary" multiline />
