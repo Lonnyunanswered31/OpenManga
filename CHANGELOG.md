@@ -5,15 +5,14 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Published container images track tagged releases.
 
-## [Unreleased]
+## [0.2.0] — 2026-09-18
+
+Upgrading: pull the new images and restart — the `migrate` service applies this release's schema change (a
+`source_image` asset type and a `submitted` job status) on start. Nothing else is required, and no existing
+project needs migrating.
 
 ### Added
 
-- **Version promotion is tied to approval.** A new character/location version no longer becomes current on
-  creation, and a draft cannot be made current at all — new panels pin the current version and take identity from
-  approved references only, so a draft as current meant generating that character with no reference. Approving a
-  version is what promotes it. A draft version can also be deleted now (never an approved one, never the last,
-  never one panels were drawn against).
 - **Outfit references are drawn from the approved design**: generating one requires an approved main reference and
   attaches it as the first image, so every outfit keeps the same face and build. Each outfit in the editor has its
   own generate button, marked once it has a reference.
@@ -28,7 +27,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   every other text job. Past descriptions are kept with their image, inputs and result, listed across every project
   you are a member of — so a style read from one reference can be applied in another project without paying to
   read it again — and can be deleted individually along with the image they came from.
-
 - **Text jobs batch too** — planning, story analysis, rewrites, page prompts, narration writing and the vision
   consistency check — on OpenAI and Google keys. A panel generated through a batch has its automatic consistency
   check batched as well, so a batched chapter does not quietly produce hundreds of interactive vision calls.
@@ -43,6 +41,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   (OpenAI's enqueued-token ceiling, configurable as `OPENAI_BATCH_MAX_ENQUEUED_TOKENS`; Gemini's payload size),
   estimated per request rather than by counting requests. Batch spend is recorded against a `:batch` model at
   half the interactive rate, so the cost dashboard separates it.
+
+### Changed
+
+- **Version promotion is tied to approval.** A new character/location version no longer becomes current on
+  creation, and a draft cannot be made current at all — new panels pin the current version and take identity from
+  approved references only, so a draft as current meant generating that character with no reference. Approving a
+  version is what promotes it. A draft version can also be deleted now (never an approved one, never the last,
+  never one panels were drawn against).
 
 ### Fixed
 
