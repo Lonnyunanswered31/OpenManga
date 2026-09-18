@@ -133,6 +133,8 @@ By adding it you are certifying the statements in the DCO: that you wrote the co
 the right to submit it under the project's licence, and that you understand the contribution and its sign-off are
 public and kept indefinitely. The name and email must be real and must match your git configuration:
 
+Automated dependency bumps (Dependabot) are exempt: a bot has no right-to-submit to certify.
+
 ```bash
 git config user.name "Your Name"
 git config user.email "your.email@example.com"
