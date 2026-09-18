@@ -942,10 +942,13 @@ describe("full production flow (mock AI)", () => {
     const svc = new JobService(h.workerDeps.db, { queue: fakeQueue });
     const r = await svc.reconcileQueue(60_000);
     expect(r.republished).toBeGreaterThanOrEqual(1);
-    const [ob] = await h.workerDeps.db.execute<{ status: string }>(
-      sql`select status from outbox where job_id = ${ghost!.id}`,
+    const [ob] = await h.workerDeps.db.execute<{ status: string; attempts: number }>(
+      sql`select status, attempts from outbox where job_id = ${ghost!.id}`,
     );
-    expect(ob!.status).toBe("pending");
+    // Re-armed is the assertion, not the instant it is read in: the harness runs the real dispatcher on a 1s
+    // tick, so by now the row is either still pending or already published again with an attempt recorded. The
+    // row was inserted as published with 0 attempts, so both outcomes prove reconcile re-armed it.
+    expect(ob!.status === "pending" || (ob!.status === "published" && ob!.attempts >= 1)).toBe(true);
     // the real dispatcher publishes it and the worker processes it (fails cleanly: revision doesn't exist)
     await waitJob(alice, ghost!.id);
   });
