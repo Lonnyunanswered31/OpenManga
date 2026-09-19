@@ -5,6 +5,69 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Published container images track tagged releases.
 
+## [0.3.0] — 2026-09-20
+
+Upgrading: pull the new images and restart. No migration, and nothing to do per project. Panels generated after
+this release can look slightly different from ones generated before it: a style's exclusions now reach the prompt
+(see below), so every image template carries a new version number.
+
+### Added
+
+- **The art style is editable field by field.** Art direction shows an input for every line `styleSection()`
+  renders — summary, lines, colour, shading, detail, faces, backgrounds, motion effects, contrast, screentones,
+  lighting — plus an "Avoid" list, rather than a preset picker and one free-text box. Editing any field applies
+  the result as a custom style through the definition the endpoint already accepted. A style taken from a
+  described image now shows its fields too: it lives on a project-scoped preset that the preset list does not
+  return, so only its one-sentence summary used to be visible while the other eleven fields silently shaped every
+  prompt.
+- **The panel editor says when prepared prompt text is in use.** Text written by "Prepare page prompts" outranks
+  the panel's own fields in the compiled prompt — intent over the beat, plus action, expression, composition and
+  lighting — and saving the spec silently discards it. Editing those fields under an active draft therefore looked
+  like it did nothing. The tab now names which fields the draft supplies, notes that continuity merges rather than
+  replaces, and offers to discard it.
+- **Every page sets its own browser title**, so a tab says where it is: `Cast · Night Bus · OpenManga`. Film
+  projects use the sidebar's wording (Shots, Shot editor), and the project name costs no extra request.
+- **Exports name the chapter they cover.** Filenames lead with the chapter number —
+  `Night_Bus_ch03_The_Rooftop_en_page-cut_1080p.mp4` — because chapter titles repeat across a series and a
+  downloaded file has to identify itself long after the page that produced it is closed. The export history shows
+  the chapter as well; it was stored all along and never displayed, so every video of a project looked alike.
+  Existing exports keep their old names.
+- A batch waiting on a provider's batch API reports **how many panels are parked** rather than nothing.
+- Long narration lines in the video preview's shot list can be read in full by hovering them.
+
+### Changed
+
+- **A style's exclusions now reach the image prompt** as an `Avoid:` line. Every built-in preset fills the field
+  in, and the style analyst is explicitly asked to fill it in, but no template ever read it — so "no photoreal
+  rendering" was recorded and thrown away. All seven image templates bump a version because their output can
+  change. References and panels are not marked stale by this: staleness is fingerprinted on descriptions, not on
+  template versions.
+- **Character references default to full body** instead of a portrait, in the picker and for API callers that omit
+  the kind. Panels lean on height, proportions and clothing far more than on a face crop.
+- The prompt inspector reports the model your own key resolves to. It showed the server's default, which is blank
+  on every bring-your-own-key run — that is, on every real run.
+
+### Fixed
+
+- **The shots grid could rate-limit you on its own.** A film project is one shot per page, so a feature-length
+  chapter renders 148 cards, and each card fetched its own page document: 148 requests per visit, a quarter of the
+  per-minute budget, repeated on every revisit more than ten seconds later. Four visits in a minute was enough to
+  start receiving 429s with nothing generating. The chapter payload now carries what the thumbnails draw, so the
+  grid costs one request. Two related storms are gone with it: a chapter event refetched every cached page
+  document at once, and the narration page refetched its document once per audio event while a chapter
+  synthesised.
+- **A bulk generate spanning panels with and without approved references failed to submit**, and took its panels
+  with it. An OpenAI batch names a single endpoint, so requests carrying reference images cannot share a batch
+  with requests that do not; the submitter enforced that but the caller never grouped by it. Because the failure
+  is not retryable, the panels were left queued behind a dead submit job with nothing to move them — 143 of them
+  in one case. Requests are now split by shape before being chunked.
+- **A batch parked at a provider reported itself finished** — "1/139 finished" while the provider still held every
+  panel — because the submitted state counted toward the total but toward no bucket. It also stopped the progress
+  view refreshing, so the batch appeared to stall until the page was reloaded.
+- **Every JSON repair against a reasoning model failed.** The repair call forced `temperature: 0`, which GPT-5 and
+  Muse Spark reject outright with a 400, so a chapter plan that needed one repair burned all three attempts on the
+  same rejection and failed. Providers now choose their own JSON default.
+
 ## [0.2.0] — 2026-09-18
 
 Upgrading: pull the new images and restart — the `migrate` service applies this release's schema change (a
