@@ -5,6 +5,47 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Published container images track tagged releases.
 
+## [0.4.0] — 2026-09-20
+
+Upgrading: pull the new images and restart. No migration, and nothing to do per project. The first maintenance
+sweep after starting will fail any panels that were left stranded behind a failed batch submitter (see below), so
+they show as failed and can be retried instead of sitting in the queue forever.
+
+### Added
+
+- **Props can be attached to a panel from the editor.** The API has always accepted them and the prompt has
+  always had a PROPS section, but nothing in the app ever sent them, so a prop reached a panel only when AI
+  planning put it there and could never be added or removed by hand.
+- **An earlier art style can be made current again.** Setting a style always minted a new version, and older
+  versions were listed but could never be selected, so comparing two looks meant retyping one from scratch.
+  Restoring stands the replaced version down rather than deleting it, so it is reversible both ways.
+- **A batch can be checked for results now** instead of waiting for the scheduled sweep, which is five minutes
+  apart by default. The button appears on a batch whenever panels are parked with a provider. One press covers
+  every outstanding batch, and presses within ten seconds of each other collapse into a single pass rather than
+  stacking provider calls.
+
+### Changed
+
+- **A chapter is planned scene by scene rather than in one response.** A feature-length chapter did not fit: runs
+  truncated at the 64k output cap on OpenAI and DeepSeek alike, and no model choice fixed it, because the cap is
+  the model's. Planning now makes one small call for the scene outline and then one call per scene, each given
+  the whole outline so the pages still lead into the next scene. A scene that comes back malformed is re-asked on
+  its own instead of losing the chapter, and progress is logged per scene. Batched plans keep the single call on
+  purpose: a batch parks the job on its first provider call, so a loop would need one 24-hour round trip per
+  scene.
+- **A content-policy refusal that names its category is final.** These are retried three times because the
+  filter is probabilistic and a second sample usually passes — but when the provider says
+  `safety_violations=[self-harm]` it is a verdict on the prompt, and it repeats identically on every attempt. A
+  named category now fails the panel on the first try; an unnamed refusal keeps its retry budget as before.
+
+### Fixed
+
+- **Panels stranded behind a failed batch submitter sat in the queue forever.** A batched panel stays queued on
+  purpose — only the submit job hands it to a provider — so when a submit job failed for good, nothing was left
+  to move its panels: 143 of them went quiet in one run, and the batch read as idle rather than broken. The
+  stalled-job sweep could not see them because they are queued, not processing. Maintenance now fails them with
+  a reason that says to retry.
+
 ## [0.3.0] — 2026-09-20
 
 Upgrading: pull the new images and restart. No migration, and nothing to do per project. Panels generated after
