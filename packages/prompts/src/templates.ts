@@ -543,6 +543,36 @@ export const imageDescribeV1 = defineTextTemplate<{
 });
 
 /**
+ * Vertical strip planning. Derived from page planning rather than shot planning on purpose: a strip keeps its
+ * dialogue, captions and sound effects — only the geometry changes — so every lettering rule carries over.
+ */
+export const stripPlanningV1 = defineTextTemplate<Parameters<typeof chapterPlanningV1.build>[0]>({
+  name: "strip-planning",
+  version: 1,
+  description: "Vertical scroll: one full-width panel per page, composed as a continuous column.",
+  system: chapterPlanningV5.system
+    .replace(templateHeader("page-planning", 5), templateHeader("strip-planning", 1))
+    .replace(
+      PLAN_ROLE_V5,
+      "You are a storyboard director adapting a chapter into a vertical-scroll manhwa: one continuous column the reader scrolls through on a phone, not a sequence of pages.",
+    )
+    .replace(
+      PLAN_PAGES_V5,
+      [
+        'STRIP: every page is exactly ONE full-width panel with layoutTemplate "full-page". Use page purpose for what the panel is for and pacing for its rhythm.',
+        'HEIGHT IS PACING: set each panel\'s `height` to how long the reader should spend on it. "short" is a wide beat that reads fast (a reaction, a cut-in, an establishing sliver), "normal" is the default, "tall" holds a moment (a reveal, a landscape, a slow turn), "very-tall" is for a fall, a drop, a long climb or one image the reader scrolls through.',
+        'SEAMS: set each panel\'s `seam` to how it meets the panel above it. "butt" for the same action continuing with no break. "dissolve" when two moments should merge softly, "bleed" for an overlap with a hard edge. "fade" with a dark `color` for a change of scene, place or time. "gap" for an ordinary beat change, which is what you get if you say nothing. The first panel of a chapter needs no seam.',
+        "Do not put a gap between every panel: a column of separate pictures is exactly what this format is not. Most seams inside one action should be butt, bleed or dissolve, and gaps should mark a change of beat.",
+        "CONTINUITY: consecutive panels inside one action should read as the same moment continuing — keep the camera, the light and the background consistent across them, and let the action advance by a small step rather than cutting elsewhere. Start a new scene only when the story changes place or time.",
+        "A fight or chase is a run of such panels: a few beats of contact joined with butt or dissolve seams, then a panel that jumps the action forward (name what changed in continuityRequirements), not one panel per punch.",
+      ].join(" "),
+    ),
+  build(i) {
+    return chapterPlanningV1.build.call(this, i);
+  },
+});
+
+/**
  * A chapter's plan does not fit in one response once the chapter is long: production runs truncated at the 64k
  * output cap on every provider. These two passes split it — scenes first, then one response per scene — so each
  * call is bounded and a scene that comes back malformed is re-asked on its own instead of losing the chapter.
@@ -611,8 +641,10 @@ function pagePass<T extends typeof chapterPlanningV5>(base: T, name: string) {
 }
 
 export const chapterOutlineV1 = outlinePass(chapterPlanningV5, "chapter-outline");
+export const stripOutlineV1 = outlinePass(stripPlanningV1, "strip-outline");
 export const shotOutlineV1 = outlinePass(shotPlanningV2, "shot-outline");
 export const scenePagesV1 = pagePass(chapterPlanningV5, "scene-pages");
+export const sceneStripV1 = pagePass(stripPlanningV1, "scene-strip");
 export const sceneShotsV1 = pagePass(shotPlanningV2, "scene-shots");
 
 export const TEXT_TEMPLATES = [
@@ -636,8 +668,11 @@ export const TEXT_TEMPLATES = [
   storyRewriteV1,
   jsonRepairV1,
   imageDescribeV1,
+  stripPlanningV1,
   chapterOutlineV1,
   shotOutlineV1,
+  stripOutlineV1,
+  sceneStripV1,
   scenePagesV1,
   sceneShotsV1,
 ];

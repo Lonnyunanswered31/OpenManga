@@ -41,7 +41,17 @@ import {
   templateFrames,
 } from "@openmanga/domain";
 import { panelCheckV1, panelPromptsV3 } from "@openmanga/prompts";
-import { asPatch, Bubble, CameraAngle, Frame, ImageTransform, PanelSpec, SfxStyle, ShotType } from "@openmanga/schemas";
+import {
+  asPatch,
+  Bubble,
+  CameraAngle,
+  Frame,
+  ImageTransform,
+  PanelSeam,
+  PanelSpec,
+  SfxStyle,
+  ShotType,
+} from "@openmanga/schemas";
 import { recordAudit } from "@openmanga/services";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -645,6 +655,8 @@ const PatchPanel = z.object({
   characterVersionIds: z.array(z.string().uuid()).max(12).optional(),
   propVersionIds: z.array(z.string().uuid()).max(12).optional(),
   promptOverride: z.string().max(32_000).nullable().optional(),
+  /** Vertical strips: how this panel meets the one before it. Null clears it back to the project's plain gap. */
+  seam: PanelSeam.nullable().optional(),
   /** Clear-only: prepared prompt text is written by the text model, never authored by hand through this route. */
   promptDraft: z.null().optional(),
   approvalStatus: z.enum(["draft", "approved", "locked", "superseded"]).optional(),
@@ -792,6 +804,51 @@ pageRoutes.post("/panels/:id/split", async (c) => {
     return pn!;
   });
   return c.json({ panel: created }, 201);
+});
+
+const StripQuery = z.object({ width: z.coerce.number().int().min(320).max(1600).default(800) });
+doc({
+  method: "GET",
+  path: "/api/chapters/:id/strip",
+  summary: "A chapter as one vertical strip: each page's block height and the seam that precedes it",
+  tag: "pages",
+  query: StripQuery,
+});
+pageRoutes.get("/chapters/:id/strip", async (c) => {
+  const chapterId = uuidParam(c, "id");
+  const project = await entityAccess(c, "chapter", chapterId, "read");
+  const { width } = query(c, StripQuery);
+  const { db } = c.get("deps");
+  const rows = await db
+    .select({ page: pages, panel: panels })
+    .from(pages)
+    .leftJoin(panels, eq(panels.pageId, pages.id))
+    .where(eq(pages.chapterId, chapterId))
+    .orderBy(asc(pages.order), asc(panels.order));
+  // One block per page: a vertical project plans one panel per page, and the page renderer already composes that
+  // panel with its lettering, so the reader can stack the same images the export stitches.
+  const seen = new Set<string>();
+  const blocks = [];
+  for (const { page, panel } of rows) {
+    if (seen.has(page.id)) continue;
+    seen.add(page.id);
+    blocks.push({
+      pageId: page.id,
+      order: page.order,
+      panelId: panel?.id ?? null,
+      height: Math.max(1, Math.round((page.height * width) / page.width)),
+      hasArt: Boolean(panel?.activeArtworkAssetId),
+      seam: panel?.seam ?? null,
+      updatedAt: page.updatedAt,
+    });
+  }
+  return c.json({
+    width,
+    gap: project.settings.webtoonGap,
+    background: "#ffffff",
+    format: project.settings.format,
+    blocks,
+  });
 });
 
 const PreviewQuery = z.object({ credentialId: z.string().uuid().optional(), model: z.string().max(200).optional() });

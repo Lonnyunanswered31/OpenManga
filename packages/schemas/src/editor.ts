@@ -115,10 +115,62 @@ export const LetteringDefaults = z.object({
 });
 export type LetteringDefaults = z.infer<typeof LetteringDefaults>;
 
-/** Film projects: every page is one full-frame 16:9 shot rendered as a narrated Ken Burns video. */
-export const ProjectFormat = z.enum(["comic", "film"]);
+/**
+ * "comic": pages read one at a time. "film": every page is one full-frame 16:9 shot rendered as a narrated Ken
+ * Burns video. "vertical": one continuous scrolling strip, where what happens *between* panels is authored — see
+ * PanelSeam. A vertical project starts with no gutter and no margin, because spacing belongs to the seam rather
+ * than being baked into every frame.
+ */
+export const ProjectFormat = z.enum(["comic", "film", "vertical"]);
 export type ProjectFormat = z.infer<typeof ProjectFormat>;
 export const FILM_PAGE = { pageWidth: 1920, pageHeight: 1080, pageMargin: 0, pageGutter: 0 } as const;
+/**
+ * 2:3 per panel, which is the aspect every image provider offers exactly, so a strip panel is generated at its
+ * real shape instead of being stretched into it. Panel height is varied per page (pages carry their own height),
+ * not by making this taller: a 1:4 page asked the model for 1:4 art, got 9:16 back and squeezed it 2x.
+ */
+export const VERTICAL_PAGE = { pageWidth: 800, pageHeight: 1200, pageMargin: 0, pageGutter: 0 } as const;
+
+/**
+ * How a panel meets the panel before it in a vertical strip. The leading edge belongs to the later panel, so a
+ * scene change is authored on the panel that opens the new scene.
+ *
+ * Until this existed every seam in a strip was the same project-wide gap, which is what made an exported strip
+ * read as a stack of separate pictures rather than one continuous scene.
+ */
+export const PanelSeam = z.object({
+  /**
+   * gap: background between the panels. butt: none, for continuous action. bleed: the panel overlaps the one
+   * before it with a hard edge. dissolve: the same overlap, blended through a vertical gradient. fade: both
+   * edges fade into a flat colour, for a scene or time break.
+   */
+  kind: z.enum(["gap", "butt", "bleed", "dissolve", "fade"]).default("gap"),
+  /** Pixels at the strip's own width: the gap, the overlap depth, or the fade band. Absent = the project gap. */
+  size: z.number().int().min(0).max(2000).optional(),
+  /** fade only; defaults to the strip background. */
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+});
+export type PanelSeam = z.infer<typeof PanelSeam>;
+
+/**
+ * How tall a strip panel is, as pacing rather than pixels: a wide establishing beat reads fast, a very tall panel
+ * holds the reader on one moment. The ratios are of the strip's width, and the two most common ones are shapes
+ * every image provider offers exactly, so the art is generated at the shape it is shown at.
+ */
+export const StripPanelHeight = z.enum(["short", "normal", "tall", "very-tall"]);
+export type StripPanelHeight = z.infer<typeof StripPanelHeight>;
+export const STRIP_HEIGHT_RATIOS: Record<StripPanelHeight, number> = {
+  short: 0.75,
+  normal: 1.5,
+  tall: 1.8,
+  "very-tall": 3,
+};
+/** The authoring page height for a strip panel of this pacing, at a given strip width. */
+export const stripPageHeight = (width: number, height: StripPanelHeight = "normal") =>
+  Math.round(width * STRIP_HEIGHT_RATIOS[height]);
 
 /**
  * Per-account preferences that seed a new project. Every field is optional: absent means "no preference", so the

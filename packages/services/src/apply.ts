@@ -38,7 +38,7 @@ import {
   segmentNarration,
   templateFrames,
 } from "@openmanga/domain";
-import { Bubble, type ChapterPlan, PanelSpec, SfxStyle, type StoryAnalysis } from "@openmanga/schemas";
+import { Bubble, type ChapterPlan, PanelSpec, SfxStyle, type StoryAnalysis, stripPageHeight } from "@openmanga/schemas";
 import { sha256Hex } from "@openmanga/storage";
 
 const slug = (s: string) =>
@@ -318,11 +318,13 @@ export async function applyChapterPlan(db: Database, chapterId: string, plan: Ch
             sc.beats.map((b, i) => ({ projectId: project.id, sceneId: scene!.id, order: i + 1, description: b })),
           );
 
-      // Film projects: one full-frame shot per page, whatever the model grouped together.
-      const plannedPages =
-        project.settings.format === "film"
-          ? sc.pages.flatMap((pg) => pg.panels.map((pp) => ({ ...pg, panels: [pp], layoutTemplate: "full-page" })))
-          : sc.pages;
+      // One panel per page for film (each is a shot) and for vertical strips, where the strip discards page
+      // geometry anyway: one panel per page leaves each panel's height free and makes the seam between two
+      // panels unambiguous, instead of some seams being gutters inside a page and others page boundaries.
+      const oneFramePerPage = project.settings.format === "film" || project.settings.format === "vertical";
+      const plannedPages = oneFramePerPage
+        ? sc.pages.flatMap((pg) => pg.panels.map((pp) => ({ ...pg, panels: [pp], layoutTemplate: "full-page" })))
+        : sc.pages;
       for (const pg of plannedPages) {
         const n = pg.panels.length;
         const tpl = layoutByKey(pg.layoutTemplate);
@@ -341,6 +343,10 @@ export async function applyChapterPlan(db: Database, chapterId: string, plan: Ch
             height: rowH - s.pageGutter,
           }));
         }
+        // A strip panel's height is its pacing, and it fills its own page, so the pacing lives on the page. Read
+        // before the insert because the page has to exist before its panel does.
+        const stripPanel = oneFramePerPage && project.settings.format === "vertical" ? pg.panels[0] : null;
+        const stripHeight = stripPanel ? PanelSpec.safeParse(stripPanel.spec) : null;
         const [page] = await tx
           .insert(pages)
           .values({
@@ -354,7 +360,8 @@ export async function applyChapterPlan(db: Database, chapterId: string, plan: Ch
             pageTurnHook: pg.pageTurnHook,
             layoutTemplate: frames.length === template.frames.length ? template.key : null,
             width: s.pageWidth,
-            height: s.pageHeight,
+            height:
+              stripHeight?.success === true ? stripPageHeight(s.pageWidth, stripHeight.data.height) : s.pageHeight,
           })
           .returning();
         const placed: { x: number; y: number; width: number; height: number }[] = [];
@@ -378,6 +385,8 @@ export async function applyChapterPlan(db: Database, chapterId: string, plan: Ch
               shotType: spec.shotType,
               cameraAngle: spec.cameraAngle,
               storyBeat: spec.beat,
+              // Only a strip reads seams; a paged project storing one would be inert but misleading.
+              seam: project.settings.format === "vertical" ? (spec.seam ?? null) : null,
               locationVersionId: panelLoc?.currentVersionId ?? null,
               characterVersionIds: [
                 ...new Set(panelChars.map((x) => x.ch!.currentVersionId).filter((x): x is string => Boolean(x))),
