@@ -5,6 +5,81 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Published container images track tagged releases.
 
+## [0.5.0] — 2026-09-22
+
+Upgrading: pull the new images and restart. One migration (`0012_panel_seam`) runs automatically and adds a
+nullable column, so existing projects are untouched and nothing needs doing per project. Comic and film projects
+behave exactly as before; the new format is only offered to projects created as one.
+
+### Added
+
+- **A vertical strip format, beside comic and film.** A strip is one scrolling column rather than a sequence of
+  pages: no gutter, no margin, one panel per page, and each panel free to be short or tall as pacing demands.
+  The webtoon export already treated the panel as its unit and threw page geometry away, so what a strip was
+  missing was never a layout engine — it was any notion of what happens *between* two panels. Every seam in an
+  exported strip used to be the same project-wide 40px gap, which is why a strip read as a column of separate
+  pictures rather than continuous art.
+- **Seams are authored per panel.** A panel records how it meets the one before it: `gap` (the old behaviour),
+  `butt` for continuous action, `bleed` for a hard-edged overlap, `dissolve` for a blended one, and `fade`
+  through a flat colour for a scene break. Set them by hand in the editor, or let chapter planning choose —
+  planning also picks each panel's height, so pacing and transitions come out of the same pass that writes the
+  dialogue. A strip is planned from **page** planning rather than shot planning, so speech, captions and sound
+  effects carry over: only the geometry changes.
+- **A seam takes its room from the panels it joins**, rather than one number for the whole chapter. A gap is 8%
+  of the shorter panel it sits between, a fade band 10%, an overlap 15% — so spacing follows the pacing instead
+  of holding a fixed rhythm down a chapter whose panels vary from short beats to full-screen drops. Setting a
+  seam's size by hand still overrides the ratio. Panels with no seam at all keep the project gutter, which is
+  what a comic or film webtoon export stacks with, so those exports are byte-for-byte unchanged.
+- **A chapter can be read as one continuous column in the app** (`/read`), stacking the same page renders the
+  editor produces — so lettering is already composed in — positioned by the same arithmetic the export uses.
+  What you scroll is what gets stitched; the integration test asserts the exported image's real pixel height
+  equals what the reader computes for the same panels.
+- **Narration progress across a whole project.** The narration editor works one chapter at a time, so a
+  synthesis run spanning a project was only ever visible a chapter at a time, with no way to tell whether the
+  rest had finished, stalled or failed without opening each one.
+- **An account can set the narration voice new projects start with**, instead of every project defaulting to the
+  same built-in voice and having to be changed by hand.
+- **A vertical strip letters itself.** A strip was planned with dialogue, captions and sound effects and then drew
+  none of them, because auto-placement is what turns a planned line into a balloon on the page and it is off by
+  default for every format. It is now on for new strips only: a comic page is composed around its balloons and a
+  planner's guess lands badly on a multi-panel layout, while a strip panel is one full-width frame with only one
+  place a balloon can go. Comic and film are unchanged, and a strip's owner can still turn it off in settings.
+
+### Fixed
+
+- **A project's derivative files are deleted with it.** Permanent deletion removed each asset's own file and
+  nothing else, but a derivative's key lives on `asset_variants`, which cascades away with the asset — so every
+  thumbnail and prompt reference stayed on disk with nothing left in the database to find it by: unreachable and
+  uncountable. Found while deleting 81 archived and trashed projects on a live instance, where it had left
+  1.2 GB behind.
+- **A bulk run is priced against the batch setting you just chose.** Ticking "send as a provider batch" priced
+  the *previous* state of the checkbox, because the re-price read the value from a stale closure — so the
+  estimate was always one click behind. Two things that made it worse are fixed with it: the dialog no longer
+  closes on every toggle, and a figure is shown only when it matches the current setting.
+- **A generation job is claimed rather than merely announced, so it can never run twice.** The runner read a
+  job's status, checked every guard against what it read, and then marked the row `processing` unconditionally —
+  so two runners that both saw `queued` both passed the guards and both called the provider: two charges and two
+  usage rows for one job. This is the shared runner, so it affected every kind of generation, not only the batch
+  replay where it was noticed (a batch poller republishes a parked job while a worker may still hold it).
+  Claiming is now a compare-and-swap on the status and attempt count that were read; the runner that loses the
+  race returns without spending money or an attempt. The crash-recovery path got the matching guard from the
+  other side: a job found mid-run with nothing to recover is only taken over once its previous runner cannot
+  still be alive, rather than immediately.
+- **A batch check says what it is actually doing.** Reported as "manual poll doesn't fetch results" — it did,
+  and took 72 seconds to do it, because ingesting 100 panels means downloading and storing 100 images. For that
+  whole minute the toast said only "checking the provider for results", so a working poll looked idle and a
+  second press returned an empty result that read as confirmation. The toast now uses the counts the endpoint
+  already returns, and a batch card distinguishes not-checked-yet from checked-and-not-ready from
+  downloading-now.
+- **Project covers are shown taller on the dashboard**, where portrait art was being cropped to a shape no page
+  in the project actually has.
+
+### Known limits
+
+Bleed and dissolve overlap two panels that were generated independently, so a blend is only as convincing as the
+two images are continuous; art that genuinely runs off the frame is a prompt problem rather than a compositing
+one. The editor shows seams as fields rather than previewing them on the canvas.
+
 ## [0.4.0] — 2026-09-20
 
 Upgrading: pull the new images and restart. No migration, and nothing to do per project. The first maintenance
