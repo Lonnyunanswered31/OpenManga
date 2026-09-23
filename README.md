@@ -81,6 +81,7 @@ Docker Compose behind nginx on one domain: `/app` SPA, `/api` API, `/cdn` author
 | [DATA_MODEL](docs/DATA_MODEL.md) | Tables and how story state, versions and assets relate |
 | [AI_PIPELINE](docs/AI_PIPELINE.md) | Analysis → planning → panels → narration, and provider resolution per run |
 | [WITHOUT_API_KEYS](docs/WITHOUT_API_KEYS.md) | Driving the whole pipeline by hand: paste text answers, upload artwork, no provider keys |
+| [ANSWER_FORMATS](docs/ANSWER_FORMATS.md) | Every answer a pasted run can ask for: each field explained, typed and exemplified |
 | [PROMPT_SYSTEM](docs/PROMPT_SYSTEM.md) | Versioned templates, validation, repair |
 | [IMAGE_REFERENCES](docs/IMAGE_REFERENCES.md) | Canonical references, derivatives, what is sent with each request |
 | [VIDEO_EXPORT_REFERENCE](docs/VIDEO_EXPORT_REFERENCE.md) | How the page cut and panel cut are rendered |
@@ -121,15 +122,15 @@ instead of building locally, pin a tag in a compose override:
 ```yaml
 # docker-compose.override.yml — compose merges this automatically
 services:
-  migrate: { image: "ghcr.io/pr0h0/openmanga-app:0.5.0", build: !reset null }
-  api: { image: "ghcr.io/pr0h0/openmanga-app:0.5.0" }
-  worker: { image: "ghcr.io/pr0h0/openmanga-app:0.5.0" }
-  mock-ai: { image: "ghcr.io/pr0h0/openmanga-app:0.5.0" }
-  nginx: { image: "ghcr.io/pr0h0/openmanga-nginx:0.5.0", build: !reset null }
-  kokoro: { image: "ghcr.io/pr0h0/openmanga-kokoro:0.5.0", build: !reset null }
+  migrate: { image: "ghcr.io/pr0h0/openmanga-app:0.6.0", build: !reset null }
+  api: { image: "ghcr.io/pr0h0/openmanga-app:0.6.0" }
+  worker: { image: "ghcr.io/pr0h0/openmanga-app:0.6.0" }
+  mock-ai: { image: "ghcr.io/pr0h0/openmanga-app:0.6.0" }
+  nginx: { image: "ghcr.io/pr0h0/openmanga-nginx:0.6.0", build: !reset null }
+  kokoro: { image: "ghcr.io/pr0h0/openmanga-kokoro:0.6.0", build: !reset null }
 ```
 Then `docker compose pull && docker compose up -d`. Use a version that exists as a release tag, and pin it rather
-than `latest` so an upgrade is something you choose (each release also carries its minor tag, here `0.5`). `!reset`
+than `latest` so an upgrade is something you choose (each release also carries its minor tag, here `0.6`). `!reset`
 needs Compose v2.24 or newer; on older versions drop the `build:` keys and run `docker compose up -d --no-build`.
 
 ## Local development

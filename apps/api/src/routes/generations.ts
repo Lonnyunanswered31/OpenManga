@@ -9,7 +9,11 @@ import {
   generationJobs,
   generationOutputs,
   inArray,
+  isNull,
+  locations,
   panels,
+  props,
+  referenceAssets,
   sql,
 } from "@openmanga/db";
 import {
@@ -19,6 +23,7 @@ import {
   PRIORITY,
   providerSupports,
 } from "@openmanga/domain";
+import { ANSWER_FIELD_DOCS, renderInterface, schemaFromPrompt } from "@openmanga/schemas";
 import { generationPreflight, projectBudget, recordAudit } from "@openmanga/services";
 import { mockTextCompletion } from "@openmanga/testing";
 import type { Context } from "hono";
@@ -242,6 +247,13 @@ function exampleAnswer(job: { status: string; compiledPrompt: string | null }) {
   }
 }
 
+/** The commented interface for the schema a parked job's prompt asks for, or null for one it does not know. */
+function answerFormat(job: { compiledPrompt: string | null }) {
+  const found = job.compiledPrompt ? schemaFromPrompt(job.compiledPrompt) : null;
+  const docs = found ? ANSWER_FIELD_DOCS[found.name as keyof typeof ANSWER_FIELD_DOCS] : undefined;
+  return found && docs ? { name: found.name, interface: renderInterface(found.name, found.schema, docs) } : null;
+}
+
 const notManual = () => conflict("This job runs against a provider, so there is no prompt to answer by hand.");
 
 doc({
@@ -274,6 +286,11 @@ generationRoutes.get("/generations/:id/manual", async (c) => {
      * and it is placeholder content, not a real reading of anything.
      */
     example: exampleAnswer(job),
+    /**
+     * The answer's shape as a TypeScript interface: every field explained, typed exactly and given an example
+     * value. Rendered from the schema in the job's own prompt, so it is exact for this question.
+     */
+    format: answerFormat(job),
     /** How many answers this job has taken so far; a plan asks one question per scene. */
     answered: Array.isArray(job.parameters.manualAnswers) ? job.parameters.manualAnswers.length : 0,
   });
@@ -327,6 +344,8 @@ const Scope = z.object({
   sceneId: z.string().uuid().optional(),
   chapterId: z.string().uuid().optional(),
   panelIds: z.array(z.string().uuid()).max(500).optional(),
+  /** Every location or every prop in the project: one reference each, for its current version. */
+  references: z.enum(["location", "prop"]).optional(),
 });
 const BulkInput = z.object({
   scope: Scope,
@@ -352,8 +371,11 @@ generationRoutes.post("/projects/:projectId/generations/bulk", async (c) => {
   const input = await body(c, BulkInput);
   const deps = c.get("deps");
   const { scope } = input;
-  const scopeKinds = [scope.pageId, scope.sceneId, scope.chapterId, scope.panelIds].filter(Boolean).length;
-  if (scopeKinds !== 1) throw badRequest("Provide exactly one of pageId, sceneId, chapterId, panelIds");
+  const scopeKinds = [scope.pageId, scope.sceneId, scope.chapterId, scope.panelIds, scope.references].filter(
+    Boolean,
+  ).length;
+  if (scopeKinds !== 1) throw badRequest("Provide exactly one of pageId, sceneId, chapterId, panelIds, references");
+  if (scope.references) return bulkReferences(c, p.id, scope.references, input);
   if (scope.pageId) await entityAccess(c, "page", scope.pageId, "generate");
   if (scope.sceneId) await entityAccess(c, "scene", scope.sceneId, "generate");
   if (scope.chapterId) await entityAccess(c, "chapter", scope.chapterId, "generate");
@@ -457,6 +479,130 @@ generationRoutes.post("/projects/:projectId/generations/bulk", async (c) => {
   });
   return c.json({ batchId, jobs: jobs.map((j) => ({ id: j.id, targetId: j.targetId })), failures, ...estimate }, 202);
 });
+
+/**
+ * One reference for every location or every prop, through the same count → price → confirm → (optionally batch)
+ * steps as a bulk panel run, so the two behave alike. "Only missing" means the current version has no reference
+ * that is not superseded — the reference equivalent of a panel with no artwork.
+ */
+async function bulkReferences(
+  c: Context<AppEnv>,
+  projectId: string,
+  subject: "location" | "prop",
+  input: z.infer<typeof BulkInput>,
+) {
+  const deps = c.get("deps");
+  const table = subject === "location" ? locations : props;
+  const rows = await deps.db
+    .select({ id: table.id, name: table.name, versionId: table.currentVersionId })
+    .from(table)
+    .where(and(eq(table.projectId, projectId), isNull(table.deletedAt)));
+  const versionIds = rows.map((r) => r.versionId).filter((v): v is string => Boolean(v));
+  const versionCol = subject === "location" ? referenceAssets.locationVersionId : referenceAssets.propVersionId;
+  const withReference = new Set(
+    versionIds.length
+      ? (
+          await deps.db
+            .select({ v: versionCol })
+            .from(referenceAssets)
+            .where(and(inArray(versionCol, versionIds), sql`${referenceAssets.status} <> 'superseded'`))
+        ).map((r) => r.v)
+      : [],
+  );
+  const inProgress = new Set(
+    versionIds.length
+      ? (
+          await deps.db
+            .select({ v: generationJobs.targetId })
+            .from(generationJobs)
+            .where(
+              and(
+                eq(generationJobs.kind, `${subject}_reference`),
+                inArray(generationJobs.targetId, versionIds),
+                inArray(generationJobs.status, ["queued", "processing", "submitted"]),
+              ),
+            )
+        ).map((r) => r.v)
+      : [],
+  );
+  const eligible = rows.filter(
+    (r) => r.versionId && !inProgress.has(r.versionId) && (!input.onlyMissing || !withReference.has(r.versionId)),
+  );
+  if (eligible.length > MAX_BULK_PANELS)
+    throw badRequest(
+      `This project has ${eligible.length} ${subject}s to draw; generate at most ${MAX_BULK_PANELS} at a time.`,
+    );
+
+  const chosen = await checkImageChoice(c, input.ai);
+  if (input.batch && !BATCH_CAPABLE_PROVIDERS.has(chosen.provider) && !deps.config.AI_MOCK_MODE)
+    throw badRequest(
+      `${chosen.provider} has no batch API, so this run cannot be batched. Generate it normally, or pick an OpenAI or Google key.`,
+    );
+  const rate = await deps.usage.rateFor(chosen.provider, input.batch ? batchModel(chosen.model) : chosen.model);
+  const estimate = {
+    count: eligible.length,
+    skipped: rows.length - eligible.length,
+    total: rows.length,
+    skippedReasons: {
+      inProgress: rows.filter((r) => r.versionId && inProgress.has(r.versionId)).length,
+      hasReference: rows.filter(
+        (r) => input.onlyMissing && r.versionId && withReference.has(r.versionId) && !inProgress.has(r.versionId),
+      ).length,
+    },
+    estimatedUsd: estimateImageBatchUsd(eligible.length, chosen.provider === "google" ? 1120 : 400, rate),
+    provider: { provider: chosen.provider, model: chosen.model },
+    batch: input.batch,
+    rateSnapshot: rate ? { provider: rate.provider, model: rate.model, effectiveFrom: rate.effectiveFrom } : null,
+  };
+  if (!input.confirm)
+    return c.json({
+      confirmRequired: true,
+      ...estimate,
+      budget: await projectBudget(deps.db, projectId),
+      credentials: await credentialReadiness(c),
+    });
+  await assertBudget(c, projectId, estimate.estimatedUsd ?? 0);
+  const allowOverBudget = c.req.header("x-allow-over-budget") === "1";
+  if (!eligible.length) return c.json({ batchId: null, jobs: [], ...estimate });
+  const batchId = crypto.randomUUID();
+  const jobs: Awaited<ReturnType<typeof deps.planner.enqueueReference>>[] = [];
+  const failures: { id: string; name: string; error: string }[] = [];
+  for (const r of eligible) {
+    try {
+      jobs.push(
+        await deps.planner.enqueueReference(subject, r.versionId!, subject, user(c).id, {
+          ai: input.ai,
+          batchId,
+          allowOverBudget,
+          batchMode: input.batch,
+        }),
+      );
+    } catch (e) {
+      failures.push({ id: r.id, name: r.name, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  if (input.batch && jobs.length)
+    await deps.db.transaction(async (tx) => {
+      await deps.jobs.createGenerationJob(tx, {
+        projectId,
+        userId: user(c).id,
+        kind: "image_batch_submit",
+        priority: jobs[0]!.priority,
+        batchId,
+        parameters: { ai: input.ai ?? null, ...(allowOverBudget ? { allowOverBudget: true } : {}) },
+        input: { batchId },
+      });
+    });
+  await deps.jobs.kick();
+  await recordAudit(deps.db, {
+    userId: user(c).id,
+    projectId,
+    action: "generation.bulk_references",
+    metadata: { batchId, subject, count: jobs.length, batch: input.batch },
+    requestId: c.get("requestId"),
+  });
+  return c.json({ batchId, jobs: jobs.map((j) => ({ id: j.id, targetId: j.targetId })), failures, ...estimate }, 202);
+}
 
 doc({
   method: "GET",
