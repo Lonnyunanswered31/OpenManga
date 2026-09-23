@@ -85,6 +85,7 @@ generationRoutes.get("/projects/:projectId/generations", async (c) => {
   const last = jobs.at(-1);
   const [counts] = await db.execute<Record<string, number>>(sql`select
     count(*) filter (where status = 'queued')::int as queued,
+    count(*) filter (where status = 'awaiting_input')::int as awaiting_input,
     count(*) filter (where status = 'processing')::int as processing,
     count(*) filter (where status = 'completed')::int as completed,
     count(*) filter (where status = 'failed')::int as failed,
@@ -206,6 +207,100 @@ generationRoutes.post("/generations/:id/retry", async (c) => {
   if (created.targetType === "panel" && created.targetId)
     await deps.db.update(panels).set({ status: "queued" }).where(eq(panels.id, created.targetId));
   return c.json({ job: created }, 202);
+});
+
+const ManualAnswer = z.object({ text: z.string().trim().min(1).max(2_000_000) });
+
+/** The answer as JSON `{text}`, or as an uploaded `file` — a chat's reply is often easier to save than to select. */
+async function readManualAnswer(c: Context<AppEnv>) {
+  if ((c.req.header("content-type") ?? "").startsWith("multipart/form-data")) {
+    const form = await c.req.formData();
+    const file = form.get("file");
+    if (file instanceof File) {
+      if (file.size > 2_000_000) throw badRequest("That answer is larger than 2 MB");
+      const text = (await file.text()).trim();
+      if (!text) throw badRequest("That file is empty");
+      return text;
+    }
+    const field = form.get("text");
+    if (typeof field === "string" && field.trim()) return field.trim();
+    throw badRequest('Send the answer as a "file" or a "text" field');
+  }
+  return (await body(c, ManualAnswer)).text;
+}
+
+const notManual = () => conflict("This job runs against a provider, so there is no prompt to answer by hand.");
+
+doc({
+  method: "GET",
+  path: "/api/generations/:id/manual",
+  summary: "The compiled prompt for a keyless run, to paste into a chat of your own",
+  tag: "generations",
+});
+generationRoutes.get("/generations/:id/manual", async (c) => {
+  const job = await jobWithAccess(c, uuidParam(c, "id"), "read");
+  if (job.parameters.manual !== true) throw notManual();
+  return c.json({
+    jobId: job.id,
+    kind: job.kind,
+    status: job.status,
+    // Built by the handler itself, so it is exactly what a provider would have been sent — including the schema
+    // the answer has to satisfy, which is part of the prompt.
+    prompt: job.compiledPrompt ?? "",
+    awaitingAnswer: job.status === "awaiting_input",
+    /** Set when a previous answer failed validation, so the next attempt can see what was wrong with it. */
+    lastError: job.failureReason,
+    /**
+     * Images the question was asked about. A copied prompt is only text, so these have to be attached to the chat
+     * by hand — an image question answered without its image is a guess.
+     */
+    attachments: Array.isArray(job.parameters.manualAttachments) ? (job.parameters.manualAttachments as string[]) : [],
+    /** How many answers this job has taken so far; a plan asks one question per scene. */
+    answered: Array.isArray(job.parameters.manualAnswers) ? job.parameters.manualAnswers.length : 0,
+  });
+});
+
+doc({
+  method: "POST",
+  path: "/api/generations/:id/manual",
+  summary: "Answer a keyless run by hand (JSON {text}, or multipart file) — validated as a provider's answer is",
+  tag: "generations",
+  body: ManualAnswer,
+});
+generationRoutes.post("/generations/:id/manual", async (c) => {
+  const job = await jobWithAccess(c, uuidParam(c, "id"), "generate");
+  if (job.parameters.manual !== true) throw notManual();
+  if (job.status !== "awaiting_input")
+    throw conflict(`This job is ${job.status}; only a job waiting for an answer can be given one.`);
+  const text = await readManualAnswer(c);
+  const deps = c.get("deps");
+  // Stored on the job, then requeued: the handler runs exactly as it would for a provider's reply, so the schema
+  // check, the appliers and the events are the same code. Nothing here decides whether the answer is any good.
+  await deps.db
+    .update(generationJobs)
+    .set({
+      status: "queued",
+      failureCode: null,
+      failureReason: null,
+      // Appended, not replaced: a handler that asks several questions (an outline, then each scene) takes one
+      // answer per question, in order, and every earlier answer is replayed on the next run.
+      parameters: sql`${generationJobs.parameters} || jsonb_build_object('manualAnswers', coalesce(${generationJobs.parameters}->'manualAnswers', '[]'::jsonb) || jsonb_build_array(${text}::text))`,
+    })
+    .where(eq(generationJobs.id, job.id));
+  // Keyed by attempt, because this job has already been through the queue once: the queue dedupes by job id, so
+  // handing it back under the same key would be dropped. Two clicks on the same answer still collapse into one.
+  await deps.jobs.enqueueGeneration(job, `${job.id}:answer:${job.attempts}`);
+  await deps.jobs.kick();
+  await recordAudit(deps.db, {
+    userId: user(c).id,
+    projectId: job.projectId,
+    action: "generation.manual_answer",
+    targetType: "generation_job",
+    targetId: job.id,
+    metadata: { kind: job.kind, characters: text.length },
+    requestId: c.get("requestId"),
+  });
+  return c.json({ accepted: true, jobId: job.id }, 202);
 });
 
 const Scope = z.object({

@@ -1,14 +1,105 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { ExternalLink, RotateCcw, XCircle } from "lucide-react";
+import { Check, ExternalLink, RotateCcw, Upload, XCircle } from "lucide-react";
+import { useState } from "react";
 import { assetUrl, get, post } from "../../api/client.ts";
 import { qk, useAction } from "../../api/hooks.ts";
 import type { JobDetail } from "../../api/types.ts";
-import { AssetImage, ErrorBox, fmt, KeyValue, PageHeader, Spinner, StatusChip } from "../../components/ui.tsx";
+import { AssetImage, ErrorBox, fmt, KeyValue, PageHeader, Spinner, StatusChip, toast } from "../../components/ui.tsx";
 import { useProjectId } from "../project/ProjectLayout.tsx";
 import { CopyButton, JsonBlock, kindLabel } from "./shared.tsx";
 
 const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+
+/**
+ * The other half of a keyless run: the prompt is above, this is where the answer comes back. Held to exactly the
+ * schema a provider's answer is, so a rejected paste explains itself and can simply be pasted again.
+ */
+function ManualAnswer({
+  jobId,
+  lastError,
+  attachments,
+  answered,
+  onSubmitted,
+}: {
+  jobId: string;
+  lastError: string | null;
+  attachments: string[];
+  answered: number;
+  onSubmitted: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const send = async (answer: string) => {
+    if (!answer.trim()) return;
+    setBusy(true);
+    try {
+      await post(`/generations/${jobId}/manual`, { text: answer.trim() });
+      toast.success("Answer submitted — checking it against the schema");
+      setText("");
+      onSubmitted();
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card border-amber-500/40 p-4">
+      <h2 className="mb-1 font-medium">Waiting for your answer{answered > 0 ? ` · question ${answered + 1}` : ""}</h2>
+      <p className="muted mb-3 text-sm">
+        Copy the compiled prompt below into any chat, then paste the reply here. It is checked against the same schema a
+        provider's answer is, so nothing is applied until it fits.
+      </p>
+      {attachments.length > 0 && (
+        <div className="mb-3 rounded-lg bg-[var(--panel-2)] p-3 text-sm">
+          <p className="mb-2">
+            This question is about {attachments.length === 1 ? "an image" : `${attachments.length} images`}. A copied
+            prompt cannot carry pictures, so download {attachments.length === 1 ? "it" : "them"} and attach{" "}
+            {attachments.length === 1 ? "it" : "them"} to your chat — the prompt marks where each one goes.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {attachments.map((id, n) => (
+              <a key={id} href={assetUrl(id)} download target="_blank" rel="noreferrer" className="text-center text-xs">
+                <AssetImage assetId={id} alt={`Image ${n + 1}`} className="size-24 rounded object-cover" />
+                image {n + 1}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+      {lastError && (
+        <p className="mb-3 rounded-lg bg-red-500/10 p-2 font-mono text-xs break-words text-red-500">{lastError}</p>
+      )}
+      <textarea
+        className="input min-h-40 font-mono text-xs"
+        placeholder="Paste the model's reply — JSON, optionally inside a code fence"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button type="button" className="btn-primary" disabled={busy || !text.trim()} onClick={() => send(text)}>
+          {busy ? <Spinner /> : <Check className="size-4" />} Submit answer
+        </button>
+        <label className="btn-secondary cursor-pointer">
+          <Upload className="size-4" /> Upload a file
+          <input
+            type="file"
+            className="sr-only"
+            accept=".json,.txt,application/json,text/plain"
+            disabled={busy}
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) await send(await f.text());
+            }}
+          />
+        </label>
+      </div>
+    </section>
+  );
+}
 
 export function JobDetailPage() {
   const projectId = useProjectId();
@@ -58,7 +149,7 @@ export function JobDetailPage() {
         subtitle={`Job ${job.id}`}
         actions={
           <>
-            {(job.status === "queued" || job.status === "processing") && (
+            {(job.status === "queued" || job.status === "processing" || job.status === "awaiting_input") && (
               <button
                 type="button"
                 className="btn-secondary"
@@ -165,6 +256,18 @@ export function JobDetailPage() {
           </div>
         </section>
       </div>
+
+      {job.status === "awaiting_input" && (
+        <ManualAnswer
+          jobId={job.id}
+          lastError={job.failureReason}
+          attachments={
+            Array.isArray(job.parameters.manualAttachments) ? (job.parameters.manualAttachments as string[]) : []
+          }
+          answered={Array.isArray(job.parameters.manualAnswers) ? job.parameters.manualAnswers.length : 0}
+          onSubmitted={() => q.refetch()}
+        />
+      )}
 
       <section className="card p-4">
         <div className="mb-2 flex items-center justify-between">

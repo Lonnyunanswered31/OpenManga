@@ -66,6 +66,11 @@ export type NewGenerationJob = {
   maxAttempts?: number;
 };
 
+const withoutKey = (o: Record<string, unknown>, key: string) => {
+  const { [key]: _dropped, ...rest } = o;
+  return rest;
+};
+
 /** Placeholder written while a retry is being created, so the claim is atomic. Replaced by the new job's id. */
 const RETRY_CLAIMED = "00000000-0000-0000-0000-000000000000";
 
@@ -206,11 +211,19 @@ export class JobService {
    * Enqueues a job that was created with `enqueue: false` — the fallback when a batch run cannot be batched
    * after all (the key's provider has no batch API), so its panels run the ordinary way instead of waiting.
    */
-  async enqueueGeneration(job: { id: string; queue: string; kind: GenerationKind; priority: number }) {
+  async enqueueGeneration(
+    job: { id: string; queue: string; kind: GenerationKind; priority: number },
+    /**
+     * Overrides the queue's own dedupe key. The queue dedupes by job id, so a job that has already run once
+     * cannot be handed back under the same key — the add is silently dropped. A job being resumed (a pasted
+     * answer) passes something distinct per attempt, which still collapses an accidental double submit.
+     */
+    dedupeKey?: string,
+  ) {
     await addToOutbox(this.db, {
       queue: job.queue as QueueName,
       jobName: job.kind,
-      jobId: job.id,
+      jobId: dedupeKey ?? job.id,
       payload: { jobId: job.id, kind: job.kind },
       priority: job.priority,
     });
@@ -228,14 +241,16 @@ export class JobService {
   async cancelGeneration(jobId: string): Promise<"cancelled" | "cancel_requested" | "not_cancellable"> {
     const [job] = await this.db.select().from(generationJobs).where(eq(generationJobs.id, jobId));
     if (!job) return "not_cancellable";
-    if (job.status === "paused") {
+    // Neither holds a worker slot nor sits in the queue — a paused job waits on the budget, a parked one on a
+    // pasted answer — so there is nothing to stop, only a row to close.
+    if (job.status === "paused" || job.status === "awaiting_input") {
       await this.db
         .update(generationJobs)
         .set({
           status: "cancelled",
           finishedAt: new Date(),
           cancelRequestedAt: new Date(),
-          failureReason: "Cancelled while paused",
+          failureReason: job.status === "paused" ? "Cancelled while paused" : "Cancelled while waiting for an answer",
         })
         .where(eq(generationJobs.id, jobId));
       await this.opts.events?.publish(job.projectId, {
@@ -482,7 +497,9 @@ export class JobService {
         compiledPrompt: job.compiledPrompt,
         provider: job.provider,
         model: job.model,
-        parameters: { ...job.parameters, retryOf: job.id },
+        // A retry is a fresh run, so answers pasted into the old one do not come with it: replaying them would
+        // re-apply exactly what the user may have cancelled to get away from.
+        parameters: { ...withoutKey(job.parameters, "manualAnswers"), retryOf: job.id },
         input: job.input,
         inputs: inputs
           .sort((a, b) => a.order - b.order)
