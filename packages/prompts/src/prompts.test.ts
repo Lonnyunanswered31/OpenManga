@@ -1,23 +1,34 @@
 import { describe, expect, test } from "bun:test";
-import { CharacterBible, PanelSpec } from "@openmanga/schemas";
+import { CharacterBible, LocationDescription, PanelSpec, PropDescription } from "@openmanga/schemas";
 import {
   allTemplateRecords,
+  chapterOutlineV2,
   chapterPlanningV3,
   chapterPlanningV4,
   chapterPlanningV5,
+  chapterPlanningV6,
   characterReferenceV1,
+  locationReferenceV1,
   narrationV1,
   narrationV2,
   narrationV3,
   narrationV4,
+  narrationV5,
   panelEditV1,
   panelGenerationV1,
   panelPromptsV2,
   panelPromptsV3,
+  panelPromptsV4,
+  propReferenceV1,
+  scenePagesV2,
+  sceneShotsV2,
+  sceneStripV2,
   shotPlanningV1,
   shotPlanningV2,
+  shotPlanningV3,
   storyAnalysisV1,
   storyAnalysisV2,
+  stripPlanningV2,
   styleSection,
   untrusted,
 } from "./index.ts";
@@ -97,9 +108,52 @@ describe("panel prompt compilation", () => {
     expect(p).toContain("design v2");
   });
 
+  test("a sheet, panorama or multi-angle reference is used for the space or object, never copied as a layout", () => {
+    const room = { name: "Mina's room", description: LocationDescription.parse({ summary: "a small bedroom" }) };
+    const lamp = { name: "Brass lamp", description: PropDescription.parse({ summary: "an old brass lamp" }) };
+    const plain = panelGenerationV1.compile({
+      ...base,
+      location: { ...room, referenceImageIndex: 2, referenceKind: "location" },
+      props: [{ ...lamp, referenceImageIndex: 3, referenceKind: "prop" }],
+    });
+    expect(plain).toContain("The location matches reference image 2.");
+    expect(plain).toContain("Brass lamp matches reference image 3.");
+    const sheet = panelGenerationV1.compile({
+      ...base,
+      location: { ...room, referenceImageIndex: 2, referenceKind: "location_sheet" },
+      props: [{ ...lamp, referenceImageIndex: 3, referenceKind: "prop_multi_angle" }],
+    });
+    expect(sheet).toContain("Reference image 2 is a sheet showing several sides of the location");
+    expect(sheet).toContain("never the sheet's divided layout");
+    expect(sheet).toContain("Brass lamp is shown from several angles in reference image 3: draw it once");
+    const pano = panelGenerationV1.compile({
+      ...base,
+      location: { ...room, referenceImageIndex: 2, referenceKind: "location_panorama" },
+    });
+    expect(pano).toContain("Reference image 2 is a panorama across the whole location");
+  });
+
+  test("location and prop references come as one image in the kind asked for", () => {
+    const room = { style, name: "Mina's room", description: LocationDescription.parse({ summary: "a small bedroom" }) };
+    expect(locationReferenceV1.compile(room)).toContain("Create a wide establishing environment reference");
+    expect(locationReferenceV1.compile(room)).toContain("no white margins");
+    const pano = locationReferenceV1.compile({ ...room, kind: "location_panorama" });
+    expect(pano).toContain("Create a panoramic environment reference");
+    expect(pano).toContain("never split into panels");
+    const sheet = locationReferenceV1.compile({ ...room, kind: "location_sheet" });
+    expect(sheet).toContain("2x2 grid");
+    // A sheet has gutters by design, so the full-bleed rule would contradict it.
+    expect(sheet).not.toContain("panel lines");
+    const lamp = { style, name: "Brass lamp", description: PropDescription.parse({ summary: "an old brass lamp" }) };
+    expect(propReferenceV1.compile(lamp)).toContain("three-quarter view");
+    const turn = propReferenceV1.compile({ ...lamp, kind: "prop_multi_angle" });
+    expect(turn).toContain("Create an object turnaround sheet");
+    expect(turn).toContain("front, side, back and top views");
+  });
+
   test("film frames are cinematic 16:9 with no text space or panel language", () => {
     const p = panelGenerationV1.compile({ ...base, panel: { ...base.panel, aspectRatio: 16 / 9 }, film: true });
-    expect(panelGenerationV1.version).toBe(7);
+    expect(panelGenerationV1.version).toBe(8);
     expect(p.startsWith("Create one cinematic 16:9 film frame")).toBe(true);
     expect(p).not.toContain("DIALOGUE NEGATIVE SPACE");
     expect(p).not.toContain("panel,");
@@ -154,6 +208,28 @@ describe("text templates isolate user content", () => {
     expect(sys).toContain("[template:story-analysis-v1]");
     expect(sys).toContain('"chapters"');
   });
+  test("0.7 prompt versions say how to use the data they now get, and keep everything else", () => {
+    const outfits = 'set outfitScope to "panel" when the change lasts only that panel';
+    for (const [t, header, kept] of [
+      [chapterPlanningV6, "[template:page-planning-v6]", "PAGES: plan pages per scene"],
+      [shotPlanningV3, "[template:shot-planning-v3]", "SHOTS: plan the shot list per scene"],
+      [stripPlanningV2, "[template:strip-planning-v2]", "HEIGHT IS PACING"],
+      [chapterOutlineV2, "[template:chapter-outline-v2]", "OUTLINE PASS"],
+      [scenePagesV2, "[template:scene-pages-v2]", "PAGE PASS"],
+      [sceneShotsV2, "[template:scene-shots-v2]", "SHOTS: plan the shot list per scene"],
+      [sceneStripV2, "[template:scene-strip-v2]", "HEIGHT IS PACING"],
+    ] as const) {
+      expect(t.system.startsWith(header)).toBe(true);
+      expect(t.system).toContain(outfits);
+      expect(t.system).toContain("treat earlierRevealedFacts as already known");
+      expect(t.system).toContain(kept);
+    }
+    expect(narrationV5.system).toContain("use pronouns that match their genderPresentation");
+    expect(narrationV5.system.startsWith("[template:narration-v5]")).toBe(true);
+    expect(panelPromptsV4.system).toContain("Write each character's action and expression by name");
+    expect(panelPromptsV4.system.startsWith("[template:panel-prompts-v4]")).toBe(true);
+  });
+
   test("registry names are unique per version", () => {
     const recs = allTemplateRecords();
     expect(new Set(recs.map((r) => `${r.name}@${r.version}`)).size).toBe(recs.length);
@@ -184,6 +260,7 @@ describe("narration v2", () => {
       narrationV2.version,
       narrationV3.version,
       narrationV4.version,
+      narrationV5.version,
     ]);
     const v3 = narrationV3.build({
       context: {},

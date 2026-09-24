@@ -34,6 +34,10 @@ export const PanelCharacterSpec = z.object({
   pose: optStr,
   action: optStr,
   outfit: optStr,
+  outfitScope: z
+    .enum(["onward", "panel"])
+    .optional()
+    .describe("onward (default): outfit holds until another is named; panel: this panel only"),
   position: optStr.describe("where in the frame, e.g. right third, foreground"),
 });
 export type PanelCharacterSpec = z.infer<typeof PanelCharacterSpec>;
@@ -79,6 +83,23 @@ export const PlannedDialogue = z.object({
   kind: z.enum(["normal", "thought", "shout", "whisper"]).catch("normal"),
   preferredQuadrant: z.enum(["top-left", "top-right", "bottom-left", "bottom-right", "top", "bottom"]).optional(),
 });
+
+/**
+ * The dialogue and SFX a plan wrote for a panel, kept on the panel when they were not lettered at once (auto-placement
+ * off), so the page can be lettered from the plan later instead of retyping it. Speakers are resolved to characters.
+ */
+export const PlannedLettering = z.object({
+  dialogue: z.array(
+    z.object({
+      speakerId: z.string().nullable(),
+      text: z.string(),
+      kind: PlannedDialogue.shape.kind,
+      preferredQuadrant: PlannedDialogue.shape.preferredQuadrant,
+    }),
+  ),
+  sfx: z.array(z.string()),
+});
+export type PlannedLettering = z.infer<typeof PlannedLettering>;
 
 export const PlannedPanel = z.object({
   spec: PanelSpec,

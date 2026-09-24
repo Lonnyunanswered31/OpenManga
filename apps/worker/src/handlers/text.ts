@@ -4,9 +4,11 @@ import {
   asc,
   chapters,
   characterAliases,
+  characterOutfits,
   characters,
   characterVersions,
   desc,
+  dialogueLines,
   eq,
   generationJobs,
   inArray,
@@ -20,6 +22,7 @@ import {
   projectStyles,
   projects,
   props,
+  propVersions,
   scenes,
   sql,
   storyAnalyses,
@@ -28,21 +31,21 @@ import {
 } from "@openmanga/db";
 import { LAYOUT_TEMPLATES, languageName, segmentNarration } from "@openmanga/domain";
 import {
-  chapterOutlineV1,
-  chapterPlanningV5,
+  chapterOutlineV2,
+  chapterPlanningV6,
   imageDescribeV1,
   jsonRepairV1,
-  narrationV4,
-  panelPromptsV3,
-  scenePagesV1,
-  sceneShotsV1,
-  sceneStripV1,
-  shotOutlineV1,
-  shotPlanningV2,
+  narrationV5,
+  panelPromptsV4,
+  scenePagesV2,
+  sceneShotsV2,
+  sceneStripV2,
+  shotOutlineV2,
+  shotPlanningV3,
   storyAnalysisV2,
   storyRewriteV1,
-  stripOutlineV1,
-  stripPlanningV1,
+  stripOutlineV2,
+  stripPlanningV2,
 } from "@openmanga/prompts";
 import {
   ChapterOutline,
@@ -50,6 +53,7 @@ import {
   ImageDescription,
   narrationDraftFor,
   PanelPromptDraft,
+  type PanelSpec,
   type ProjectFormat,
   ScenePages,
   StoryAnalysis,
@@ -201,14 +205,27 @@ async function projectPlanningData(deps: WorkerDeps, projectId: string, chapterI
           ),
         )
     : [];
+  const outfits = chars.length
+    ? await deps.db
+        .select()
+        .from(characterOutfits)
+        .where(
+          inArray(
+            characterOutfits.characterId,
+            chars.map((c) => c.c.id),
+          ),
+        )
+        .orderBy(asc(characterOutfits.createdAt))
+    : [];
   const locs = await deps.db
     .select({ l: locations, v: locationVersions })
     .from(locations)
     .leftJoin(locationVersions, eq(locationVersions.id, locations.currentVersionId))
     .where(and(eq(locations.projectId, projectId), isNull(locations.deletedAt)));
   const prs = await deps.db
-    .select()
+    .select({ p: props, v: propVersions })
     .from(props)
+    .leftJoin(propVersions, eq(propVersions.id, props.currentVersionId))
     .where(and(eq(props.projectId, projectId), isNull(props.deletedAt)));
   const [chapter] = await deps.db.select().from(chapters).where(eq(chapters.id, chapterId));
   const [prev] = chapter
@@ -219,10 +236,25 @@ async function projectPlanningData(deps: WorkerDeps, projectId: string, chapterI
         .orderBy(sql`${chapters.order} desc`)
         .limit(1)
     : [];
+  // Facts revealed before the previous chapter: the planner must not reveal them again or contradict them.
+  const earlier = chapter
+    ? await deps.db
+        .select({ revealedFacts: chapters.revealedFacts })
+        .from(chapters)
+        .where(and(eq(chapters.projectId, projectId), sql`${chapters.order} < ${chapter.order}`))
+        .orderBy(chapters.order)
+    : [];
   const [project] = await deps.db.select().from(projects).where(eq(projects.id, projectId));
   const artDirection = await projectArtDirection(deps, projectId);
+  const [analysis] = await deps.db
+    .select({ result: storyAnalyses.result })
+    .from(storyAnalyses)
+    .where(and(eq(storyAnalyses.projectId, projectId), eq(storyAnalyses.status, "applied")))
+    .orderBy(desc(storyAnalyses.appliedAt))
+    .limit(1);
   const keyOf = (analysisKey: string | null, name: string) =>
     analysisKey ?? name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const castKeys = new Set(chars.map(({ c }) => keyOf(c.analysisKey, c.name)));
   return {
     chapter,
     data: {
@@ -239,22 +271,39 @@ async function projectPlanningData(deps: WorkerDeps, projectId: string, chapterI
             title: prev.title,
             closingState: prev.closingState,
             characterStateChanges: prev.characterStateChanges,
+            locationStateChanges: prev.locationStateChanges,
             revealedFacts: prev.revealedFacts,
           }
         : null,
+      earlierRevealedFacts: earlier.slice(0, -1).flatMap((c) => c.revealedFacts),
       characters: chars.map(({ c, v }) => ({
         key: keyOf(c.analysisKey, c.name),
         name: c.name,
         role: c.role,
         aliases: aliases.filter((a) => a.characterId === c.id).map((a) => a.alias),
         look: v ? [v.description.hair, v.description.eyes, v.description.wardrobe].filter(Boolean).join("; ") : "",
+        // What poses and expressions should carry: how this person moves and reacts.
+        distinctiveFeatures: v?.description.distinctiveFeatures ?? [],
+        personality: v?.description.personality ?? "",
+        visualMannerisms: v?.description.visualMannerisms ?? "",
+        protagonist: analysis?.result?.protagonistKey === keyOf(c.analysisKey, c.name) || undefined,
+        // Naming one of these in a panel's outfit dresses the character in it, reference image included.
+        outfits: outfits.filter((o) => o.characterId === c.id).map((o) => o.name),
       })),
       locations: locs.map(({ l, v }) => ({
         key: keyOf(l.analysisKey, l.name),
         name: l.name,
         summary: v?.description.summary ?? "",
+        // The planner is told to build foreground, midground and background from these.
+        keyFeatures: v?.description.keyFeatures ?? [],
+        lighting: v?.description.lighting ?? "",
       })),
-      props: prs.map((p) => ({ key: keyOf(p.analysisKey, p.name), name: p.name })),
+      props: prs.map(({ p, v }) => ({
+        key: keyOf(p.analysisKey, p.name),
+        name: p.name,
+        summary: v?.description.summary ?? "",
+      })),
+      relationships: (analysis?.result?.relationships ?? []).filter((r) => castKeys.has(r.from) && castKeys.has(r.to)),
     },
   };
 }
@@ -299,7 +348,7 @@ async function planByScene(
   const outline = await structured(
     deps,
     job,
-    (i.format === "film" ? shotOutlineV1 : i.format === "vertical" ? stripOutlineV1 : chapterOutlineV1).build({
+    (i.format === "film" ? shotOutlineV2 : i.format === "vertical" ? stripOutlineV2 : chapterOutlineV2).build({
       ...base,
       targetPages: target,
     }),
@@ -307,7 +356,7 @@ async function planByScene(
     "ChapterOutline",
     16_000,
   );
-  const pagesTemplate = i.format === "film" ? sceneShotsV1 : i.format === "vertical" ? sceneStripV1 : scenePagesV1;
+  const pagesTemplate = i.format === "film" ? sceneShotsV2 : i.format === "vertical" ? sceneStripV2 : scenePagesV2;
   const scenes: ChapterPlan["scenes"] = [];
   for (const [sceneIndex, scene] of outline.data.scenes.entries()) {
     if (await isCancelRequested(deps, job.id)) throw new JobCancelledError();
@@ -347,7 +396,7 @@ export async function chapterPlan(deps: WorkerDeps, job: GenerationJob) {
   const format: ProjectFormat = proj?.settings.format ?? "comic";
   const oneFrame = format === "film" || format === "vertical";
   const messages = (
-    format === "film" ? shotPlanningV2 : format === "vertical" ? stripPlanningV1 : chapterPlanningV5
+    format === "film" ? shotPlanningV3 : format === "vertical" ? stripPlanningV2 : chapterPlanningV6
   ).build({
     projectData: data,
     chapterText: chapter.sourceExcerpt || chapter.summary,
@@ -405,18 +454,65 @@ export async function pagePrompts(deps: WorkerDeps, job: GenerationJob) {
         .innerJoin(characters, eq(characters.id, characterVersions.characterId))
         .where(inArray(characterVersions.id, charIds))
     : [];
+  // After a plan is applied, a spec names its cast, location and props by database id. Give the model their names
+  // (and what the location and props look like) instead, or it cannot tell whose pose is whose.
+  const specChars = await deps.db
+    .select({ id: characters.id, name: characters.name })
+    .from(characters)
+    .where(eq(characters.projectId, page.projectId));
+  const locIds = [...new Set(pns.map((p) => p.locationVersionId).filter((x): x is string => Boolean(x)))];
+  const locs = locIds.length
+    ? await deps.db
+        .select({ id: locationVersions.id, name: locations.name, description: locationVersions.description })
+        .from(locationVersions)
+        .innerJoin(locations, eq(locations.id, locationVersions.locationId))
+        .where(inArray(locationVersions.id, locIds))
+    : [];
+  const propIds = [...new Set(pns.flatMap((p) => p.propVersionIds))];
+  const prs = propIds.length
+    ? await deps.db
+        .select({ id: propVersions.id, name: props.name, description: propVersions.description })
+        .from(propVersions)
+        .innerJoin(props, eq(props.id, propVersions.propId))
+        .where(inArray(propVersions.id, propIds))
+    : [];
+  const lines = await deps.db
+    .select({ panelId: dialogueLines.panelId, text: dialogueLines.text, speaker: characters.name })
+    .from(dialogueLines)
+    .leftJoin(characters, eq(characters.id, dialogueLines.characterId))
+    .where(eq(dialogueLines.pageId, pageId))
+    .orderBy(asc(dialogueLines.order));
+  const nameOf = (id: unknown) => specChars.find((c) => c.id === id)?.name ?? id;
+  const readable = (spec: Record<string, unknown> | null) => {
+    if (!spec) return null;
+    const { locationId, propIds: _p, dialogueIds: _d, narrationIds: _n, sfxIds: _s, ...rest } = spec;
+    return {
+      ...rest,
+      characters: ((spec.characters as Record<string, unknown>[] | undefined) ?? []).map((c) => ({
+        ...c,
+        characterId: undefined,
+        name: nameOf(c.characterId),
+      })),
+    };
+  };
   const context = {
     scene: scene
       ? {
           title: scene.title,
           summary: scene.summary,
+          purpose: scene.purpose,
           time: scene.time,
           weather: scene.weather,
           continuityNotes: scene.continuityNotes,
           state: scene.initialState,
         }
       : null,
-    page: { purpose: page.purpose, pacing: page.pacing, visualEmphasis: page.visualEmphasis },
+    page: {
+      purpose: page.purpose,
+      pacing: page.pacing,
+      visualEmphasis: page.visualEmphasis,
+      pageTurnHook: page.pageTurnHook,
+    },
     artDirection: await projectArtDirection(deps, page.projectId),
   };
   const panelData = pns.map((p) => ({
@@ -426,12 +522,21 @@ export async function pagePrompts(deps: WorkerDeps, job: GenerationJob) {
     cameraAngle: p.cameraAngle,
     beat: p.storyBeat,
     characters: p.characterVersionIds.map((v) => chars.find((c) => c.id === v)?.name).filter(Boolean),
-    spec: [...specs].find((s) => s.panel_id === p.id)?.spec ?? null,
+    location: (() => {
+      const l = locs.find((x) => x.id === p.locationVersionId);
+      return l ? { name: l.name, summary: l.description.summary, keyFeatures: l.description.keyFeatures } : null;
+    })(),
+    props: prs
+      .filter((x) => p.propVersionIds.includes(x.id))
+      .map((x) => ({ name: x.name, summary: x.description.summary })),
+    // What is said here shapes the acting, even though the text itself is never drawn by the model.
+    dialogue: lines.filter((l) => l.panelId === p.id).map((l) => ({ speaker: l.speaker, text: l.text })),
+    spec: readable([...specs].find((s) => s.panel_id === p.id)?.spec ?? null),
   }));
   const r = await structured(
     deps,
     job,
-    panelPromptsV3.build({ context, panels: panelData }),
+    panelPromptsV4.build({ context, panels: panelData }),
     PanelPromptDraft,
     "PanelPromptDraft",
   );
@@ -449,8 +554,8 @@ export async function pagePrompts(deps: WorkerDeps, job: GenerationJob) {
           composition: d.composition,
           lighting: d.lighting,
           continuity: d.continuity,
-          templateName: panelPromptsV3.name,
-          templateVersion: panelPromptsV3.version,
+          templateName: panelPromptsV4.name,
+          templateVersion: panelPromptsV4.version,
           jobId: job.id,
         },
         status: pn.status === "planned" || pn.status === "failed" ? "prompt-ready" : pn.status,
@@ -471,12 +576,67 @@ export async function narrationText(deps: WorkerDeps, job: GenerationJob) {
   const chapterId = String(job.input.chapterId);
   const [chapter] = await deps.db.select().from(chapters).where(eq(chapters.id, chapterId));
   if (!chapter) throw new InputError("Chapter no longer exists");
-  const pns = await deps.db
-    .select({ id: panels.id, beat: panels.storyBeat, pageOrder: pages.order, order: panels.order })
+  const rows = await deps.db
+    .select({
+      id: panels.id,
+      beat: panels.storyBeat,
+      pageOrder: pages.order,
+      order: panels.order,
+      cast: panels.characterVersionIds,
+      spec: sql<PanelSpec | null>`(select spec from panel_specs s where s.panel_id = ${panels.id} order by s.version_number desc limit 1)`,
+    })
     .from(panels)
     .innerJoin(pages, eq(pages.id, panels.pageId))
     .where(eq(pages.chapterId, chapterId))
     .orderBy(asc(pages.order), asc(panels.order));
+  // Who is in the chapter, so the narration names people rightly and gets their pronouns right; what they say and
+  // feel on each panel; and where the story stood before it, so it does not re-introduce what the listener knows.
+  const versionIds = [...new Set(rows.flatMap((r) => r.cast))];
+  const cast = versionIds.length
+    ? await deps.db
+        .select({ versionId: characterVersions.id, id: characters.id, c: characters, v: characterVersions })
+        .from(characterVersions)
+        .innerJoin(characters, eq(characters.id, characterVersions.characterId))
+        .where(inArray(characterVersions.id, versionIds))
+    : [];
+  const castAliases = cast.length
+    ? await deps.db
+        .select()
+        .from(characterAliases)
+        .where(
+          inArray(
+            characterAliases.characterId,
+            cast.map((c) => c.id),
+          ),
+        )
+    : [];
+  const spoken = rows.length
+    ? await deps.db
+        .select({ panelId: dialogueLines.panelId, text: dialogueLines.text, speaker: characters.name })
+        .from(dialogueLines)
+        .leftJoin(characters, eq(characters.id, dialogueLines.characterId))
+        .where(
+          inArray(
+            dialogueLines.panelId,
+            rows.map((r) => r.id),
+          ),
+        )
+        .orderBy(asc(dialogueLines.order))
+    : [];
+  const [prev] = await deps.db
+    .select()
+    .from(chapters)
+    .where(and(eq(chapters.projectId, chapter.projectId), sql`${chapters.order} < ${chapter.order}`))
+    .orderBy(sql`${chapters.order} desc`)
+    .limit(1);
+  const pns = rows.map((r) => ({
+    id: r.id,
+    beat: r.beat,
+    pageOrder: r.pageOrder,
+    order: r.order,
+    emotion: r.spec?.emotion || undefined,
+    dialogue: spoken.filter((d) => d.panelId === r.id).map((d) => ({ speaker: d.speaker, text: d.text })),
+  }));
   const [project] = await deps.db
     .select({ settings: projects.settings, language: projects.language })
     .from(projects)
@@ -488,9 +648,21 @@ export async function narrationText(deps: WorkerDeps, job: GenerationJob) {
   const r = await structured(
     deps,
     job,
-    narrationV4.build({
+    narrationV5.build({
       language: `${languageName(language)} (${language})`,
-      context: { chapter: { title: chapter.title, summary: chapter.summary } },
+      context: {
+        chapter: { title: chapter.title, summary: chapter.summary },
+        previousChapter: prev
+          ? { title: prev.title, closingState: prev.closingState, revealedFacts: prev.revealedFacts }
+          : null,
+        worldNotes: project?.settings.worldNotes,
+        characters: [...new Map(cast.map((c) => [c.id, c])).values()].map(({ c, v }) => ({
+          name: c.name,
+          role: c.role,
+          aliases: castAliases.filter((a) => a.characterId === c.id).map((a) => a.alias),
+          genderPresentation: v.description.genderPresentation,
+        })),
+      },
       chapterText: chapter.sourceExcerpt || chapter.summary,
       panels: promptPanels,
       style: String(job.input.style || project?.settings.narrationStyle || ""),

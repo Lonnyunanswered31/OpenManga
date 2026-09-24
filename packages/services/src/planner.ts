@@ -41,6 +41,7 @@ import {
 import { CharacterBible, type PanelSpec, type ProjectSettings } from "@openmanga/schemas";
 import type { AssetRecord, AssetService } from "./assets.ts";
 import type { JobService, NewGenerationInput } from "./jobs.ts";
+import { outfitReferenceAssets, resolveOutfits, wardrobeText } from "./outfits.ts";
 import { type AiChoice, MISSING_CREDENTIAL, type ProviderResolver } from "./providers.ts";
 import { versionFingerprint } from "./staleness.ts";
 
@@ -63,7 +64,10 @@ const KIND_ORDER: ReferenceKind[] = [
   "outfit",
   "expression_sheet",
   "location",
+  "location_sheet",
+  "location_panorama",
   "prop",
+  "prop_multi_angle",
   "style",
 ];
 
@@ -74,7 +78,10 @@ export const REFERENCE_ASPECT: Record<string, number> = {
   expression_sheet: 3 / 2,
   outfit: 2 / 3,
   location: 3 / 2,
+  location_panorama: 3 / 2,
+  location_sheet: 3 / 2,
   prop: 1,
+  prop_multi_angle: 3 / 2,
   style: 2 / 3,
   cover: 2 / 3,
 };
@@ -147,7 +154,10 @@ export class GenerationPlanner {
   }
 
   /** Approved/locked canonical reference for a subject version. Drafts are never used for identity. */
-  async approvedReference(subject: RefSubject, versionId: string): Promise<AssetRecord | null> {
+  async approvedReference(
+    subject: RefSubject,
+    versionId: string,
+  ): Promise<(AssetRecord & { referenceKind: ReferenceKind }) | null> {
     const col =
       subject === "character"
         ? referenceAssets.characterVersionId
@@ -167,35 +177,7 @@ export class GenerationPlanner {
         Number(b.ref.isPrimary) - Number(a.ref.isPrimary) ||
         KIND_ORDER.indexOf(a.ref.kind) - KIND_ORDER.indexOf(b.ref.kind),
     );
-    return rows[0]?.asset ?? null;
-  }
-
-  /**
-   * Approved outfit reference whose outfit name matches the panel's outfit text (either contains the other,
-   * case-insensitive). Outfit references are generated with `outfitId`.
-   */
-  private async matchingOutfitReference(characterId: string, versionId: string, outfitText: string) {
-    const wanted = outfitText.toLowerCase().trim();
-    if (!wanted) return null;
-    const rows = await this.db
-      .select({ o: characterOutfits, asset: assets, ref: referenceAssets })
-      .from(referenceAssets)
-      .innerJoin(characterOutfits, eq(characterOutfits.id, referenceAssets.outfitId))
-      .innerJoin(assets, eq(assets.id, referenceAssets.assetId))
-      .where(
-        and(
-          eq(characterOutfits.characterId, characterId),
-          eq(referenceAssets.characterVersionId, versionId),
-          inArray(referenceAssets.status, ["approved", "locked"]),
-          isNull(assets.deletedAt),
-        ),
-      )
-      .orderBy(desc(referenceAssets.isPrimary), desc(referenceAssets.createdAt));
-    const hit = rows.find((r) => {
-      const name = r.o.name.toLowerCase().trim();
-      return name.length > 0 && (wanted.includes(name) || name.includes(wanted));
-    });
-    return hit ? { name: hit.o.name, asset: hit.asset } : null;
+    return rows[0] ? { ...rows[0].asset, referenceKind: rows[0].ref.kind } : null;
   }
 
   private async derivativeInput(
@@ -272,9 +254,27 @@ export class GenerationPlanner {
       : [];
     charRows.sort((a, b) => panel.characterVersionIds.indexOf(a.v.id) - panel.characterVersionIds.indexOf(b.v.id));
     const chars: PanelCharacterContext[] = [];
+    const specOf = (c: (typeof charRows)[number]["c"]) =>
+      spec?.characters.find((x) => x.characterId === c.id || x.characterId === c.analysisKey) ?? null;
+    const worn = await resolveOutfits(
+      this.db,
+      panelId,
+      charRows.map(({ c, v }) => ({ id: c.id, text: specOf(c)?.outfit, versionId: v.id })),
+    );
+    const allOutfits = worn.size
+      ? await this.db
+          .select()
+          .from(characterOutfits)
+          .where(
+            inArray(
+              characterOutfits.characterId,
+              charRows.map(({ c }) => c.id),
+            ),
+          )
+      : [];
     for (const { v, c } of charRows) {
       const ref = await this.approvedReference("character", v.id);
-      const pc = spec?.characters.find((x) => x.characterId === c.id || x.characterId === c.analysisKey) ?? null;
+      const pc = specOf(c);
       let referenceImageIndex: number | undefined;
       if (ref && refs.length < MAX_REFERENCES) {
         refs.push({
@@ -285,26 +285,38 @@ export class GenerationPlanner {
         });
         referenceImageIndex = refs.length;
       }
-      // Identity reference first; the outfit reference (if the panel names a known outfit) comes right after.
+      // Identity reference first; the reference of the outfit this panel resolves to comes right after.
       let outfitReference: PanelCharacterContext["outfitReference"];
-      const outfit = pc?.outfit ? await this.matchingOutfitReference(c.id, v.id, pc.outfit) : null;
-      if (outfit && outfit.asset.id !== ref?.id && refs.length < MAX_REFERENCES) {
+      const outfit = worn.get(c.id);
+      const outfitAsset = outfit
+        ? (await outfitReferenceAssets(this.db, [outfit.outfit.id], v.id)).get(outfit.outfit.id)
+        : undefined;
+      if (outfit && outfitAsset && outfitAsset.id !== ref?.id && refs.length < MAX_REFERENCES) {
         refs.push({
-          asset: outfit.asset,
+          asset: outfitAsset,
           role: "character_ref",
-          label: `${c.name} outfit: ${outfit.name}`,
+          label: `${c.name} outfit: ${outfit.outfit.name}`,
           subjectVersionId: v.id,
         });
-        outfitReference = { name: outfit.name, imageIndex: refs.length };
+        outfitReference = { name: outfit.outfit.name, imageIndex: refs.length };
       }
+      // The resolved outfit's own description is what the WARDROBE line reads; the panel's text stays as a detail.
+      const wardrobe = outfit
+        ? wardrobeText(
+            outfit,
+            allOutfits.filter((o) => o.characterId === c.id),
+            pc?.outfit,
+          )
+        : undefined;
       chars.push({
         name: c.name,
         versionNumber: v.versionNumber,
         bible: CharacterBible.parse(v.description),
         immutableTraits: v.immutableTraits,
+        outfit: wardrobe,
         referenceImageIndex,
         outfitReference,
-        panel: pc,
+        panel: pc && wardrobe ? { ...pc, outfit: wardrobe } : pc,
       });
     }
 
@@ -327,7 +339,12 @@ export class GenerationPlanner {
           });
           referenceImageIndex = refs.length;
         }
-        location = { name: l.l.name, description: l.v.description, referenceImageIndex };
+        location = {
+          name: l.l.name,
+          description: l.v.description,
+          referenceImageIndex,
+          referenceKind: referenceImageIndex ? ref?.referenceKind : undefined,
+        };
       }
     }
 
@@ -350,7 +367,12 @@ export class GenerationPlanner {
           });
           referenceImageIndex = refs.length;
         }
-        propCtx.push({ name: pr.p.name, description: pr.v.description, referenceImageIndex });
+        propCtx.push({
+          name: pr.p.name,
+          description: pr.v.description,
+          referenceImageIndex,
+          referenceKind: referenceImageIndex ? ref?.referenceKind : undefined,
+        });
       }
     }
 
@@ -365,6 +387,34 @@ export class GenerationPlanner {
     const continuity: string[] = [];
     if (scene) {
       continuity.push(...scene.continuityNotes, ...Object.entries(scene.initialState).map(([k, v]) => `${k}: ${v}`));
+      const cast = await this.db
+        .select({ name: characters.name, key: characters.analysisKey })
+        .from(characters)
+        .where(eq(characters.projectId, panel.projectId));
+      const present = new Set(chars.map((c) => c.name.toLowerCase()));
+      // A note about someone not in this panel is left out; a note about no one in particular is kept.
+      const relevant = (note: string) => {
+        const l = note.toLowerCase();
+        const mentions = cast.filter(
+          (c) => l.includes(c.name.toLowerCase()) || (c.key && l.includes(c.key.toLowerCase())),
+        );
+        return !mentions.length || mentions.some((m) => present.has(m.name.toLowerCase()));
+      };
+      // What earlier scenes of the chapter changed for good (a torn sleeve, a bandaged hand) still shows here, and
+      // a scene that states no starting state of its own starts where the one before it ended.
+      const before = await this.db
+        .select()
+        .from(scenes)
+        .where(and(eq(scenes.chapterId, scene.chapterId), sql`${scenes.order} < ${scene.order}`))
+        .orderBy(asc(scenes.order));
+      const last = before.at(-1);
+      if (last && !Object.keys(scene.initialState).length)
+        continuity.push(
+          ...Object.entries(last.finalState)
+            .map(([k, v]) => `${k}: ${v}`)
+            .filter(relevant),
+        );
+      continuity.push(...before.flatMap((b) => b.continuityDeltas).filter(relevant));
       // continuity from earlier panels in the same scene, filtered to present characters
       const earlier = await this.db
         .select({ spec: panelSpecs.spec, order: panels.order, pageOrder: pages.order, id: panels.id })
@@ -372,20 +422,9 @@ export class GenerationPlanner {
         .innerJoin(pages, eq(pages.id, panels.pageId))
         .innerJoin(panelSpecs, eq(panelSpecs.panelId, panels.id))
         .where(eq(panels.sceneId, scene.id));
-      const allNames = (
-        await this.db
-          .select({ name: characters.name })
-          .from(characters)
-          .where(eq(characters.projectId, panel.projectId))
-      ).map((r) => r.name.toLowerCase());
-      const present = chars.map((c) => c.name.toLowerCase());
       for (const e of earlier) {
         if (e.pageOrder > page.order || (e.pageOrder === page.order && e.order >= panel.order)) continue;
-        for (const req of e.spec.continuityRequirements ?? []) {
-          const l = req.toLowerCase();
-          const mentions = allNames.filter((n) => l.includes(n));
-          if (!mentions.length || mentions.some((m) => present.includes(m))) continuity.push(req);
-        }
+        continuity.push(...(e.spec.continuityRequirements ?? []).filter(relevant));
       }
     }
 
@@ -582,6 +621,7 @@ export class GenerationPlanner {
     let prompt: string;
     let label: string;
     let templateName: string;
+    let templateVersion: number;
     /** The approved identity reference an outfit reference is drawn from. */
     let baseline: AssetRecord | null = null;
     const input: Record<string, unknown> = { subject, versionId, kind, outfitId: opts.outfitId ?? null };
@@ -631,6 +671,7 @@ export class GenerationPlanner {
       });
       label = `${r.c.name} v${r.v.versionNumber} ${kind}`;
       templateName = characterReferenceV1.name;
+      templateVersion = characterReferenceV1.version;
     } else if (subject === "location") {
       const [r] = await this.db
         .select({ v: locationVersions, l: locations })
@@ -640,15 +681,17 @@ export class GenerationPlanner {
       if (!r) throw new PlanningError(404, "Location version not found");
       projectId = r.l.projectId;
       const { style } = await this.styleContext(projectId);
+      kind = kind === "location_panorama" || kind === "location_sheet" ? kind : "location";
       prompt = locationReferenceV1.compile({
         style,
         name: r.l.name,
         description: r.v.description,
+        kind,
         extraInstruction: opts.extraInstruction,
       });
-      label = `${r.l.name} v${r.v.versionNumber}`;
+      label = `${r.l.name} v${r.v.versionNumber}${kind === "location" ? "" : ` ${kind.replace("location_", "")}`}`;
       templateName = locationReferenceV1.name;
-      kind = "location";
+      templateVersion = locationReferenceV1.version;
     } else if (subject === "prop") {
       const [r] = await this.db
         .select({ v: propVersions, p: props })
@@ -658,15 +701,17 @@ export class GenerationPlanner {
       if (!r) throw new PlanningError(404, "Prop version not found");
       projectId = r.p.projectId;
       const { style } = await this.styleContext(projectId);
+      kind = kind === "prop_multi_angle" ? kind : "prop";
       prompt = propReferenceV1.compile({
         style,
         name: r.p.name,
         description: r.v.description,
+        kind,
         extraInstruction: opts.extraInstruction,
       });
-      label = `${r.p.name} v${r.v.versionNumber}`;
+      label = `${r.p.name} v${r.v.versionNumber}${kind === "prop" ? "" : " multi angle"}`;
       templateName = propReferenceV1.name;
-      kind = "prop";
+      templateVersion = propReferenceV1.version;
     } else {
       const [ps] = await this.db.select().from(projectStyles).where(eq(projectStyles.id, versionId));
       if (!ps) throw new PlanningError(404, "Project style not found");
@@ -675,6 +720,7 @@ export class GenerationPlanner {
       prompt = styleReferenceV1.compile({ style, subject: opts.extraInstruction ?? "" });
       label = "style reference";
       templateName = styleReferenceV1.name;
+      templateVersion = styleReferenceV1.version;
       kind = "style";
     }
     input.sourceFingerprint = await versionFingerprint(this.db, subject, versionId);
@@ -704,7 +750,7 @@ export class GenerationPlanner {
           targetType: `${subject}_version`,
           targetId: versionId,
           templateName,
-          templateVersion: 1,
+          templateVersion,
           compiledPrompt: prompt,
           provider: run.provider,
           model: run.model,

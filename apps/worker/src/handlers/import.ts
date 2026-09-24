@@ -19,6 +19,7 @@ import {
   locationVersions,
   narrationLines,
   narrationSegments,
+  outfitAssignments,
   pages,
   panelSpecs,
   panels,
@@ -27,7 +28,7 @@ import {
   projectType,
   props,
   propVersions,
-  type ReferenceKind,
+  REFERENCE_KINDS,
   readingDirection,
   referenceAssets,
   scenes,
@@ -57,17 +58,6 @@ const limitsFrom = (config: WorkerDeps["config"]): ExtractLimits => ({
   maxTotalBytes: config.IMPORT_MAX_UPLOAD_MB * 1024 * 1024,
   maxRatio: config.IMPORT_MAX_COMPRESSION_RATIO,
 });
-const REFERENCE_KINDS: ReferenceKind[] = [
-  "portrait",
-  "full_body",
-  "multi_angle",
-  "expression_sheet",
-  "outfit",
-  "location",
-  "prop",
-  "style",
-  "uploaded",
-];
 
 const pick = <T extends string, F = T>(values: readonly T[], v: string | null | undefined, fallback: F): T | F =>
   values.includes(v as T) ? (v as T) : fallback;
@@ -662,6 +652,13 @@ async function restore(
             propVersionIds: pn.props.flatMap((r) => refs.get(r) ?? []),
             approvalStatus: pick(approvalStatus.enumValues, pn.approvalStatus, "draft"),
             promptOverride: pn.promptOverride,
+            plannedLettering: pn.plannedLettering && {
+              ...pn.plannedLettering,
+              dialogue: pn.plannedLettering.dialogue.map((d) => ({
+                ...d,
+                speakerId: (d.speakerId && refs.get(d.speakerId)) || null,
+              })),
+            },
           })
           .returning({ id: panels.id });
         const panelId = panel!.id;
@@ -690,6 +687,12 @@ async function restore(
             bubble: dl.bubble,
           });
           counts.dialogue!++;
+        }
+        for (const w of pn.outfits) {
+          const characterId = refs.get(w.character);
+          const outfitId = refs.get(w.outfit);
+          if (characterId && outfitId)
+            await tx.insert(outfitAssignments).values({ projectId, characterId, outfitId, panelId, scope: w.scope });
         }
         for (const sfx of pn.sfx) {
           await tx.insert(soundEffects).values({ projectId, pageId, panelId, text: sfx.text, style: sfx.style });

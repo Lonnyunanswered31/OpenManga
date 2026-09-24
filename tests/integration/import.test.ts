@@ -140,6 +140,18 @@ async function markDetails(projectId: string, pageId: string, panelId: string) {
   await db.execute(sql`
     update reference_assets set outfit_id = ${outfit!.id}, status = 'approved'
     where project_id = ${projectId} and character_version_id is not null`);
+  // Lettering the plan kept for later: its speaker must come back as the imported character.
+  await db.execute(sql`
+    update panels set planned_lettering = jsonb_build_object(
+      'dialogue', jsonb_build_array(jsonb_build_object(
+        'speakerId', (select id::text from characters where project_id = ${projectId} order by created_at limit 1),
+        'text', 'Later, then.', 'kind', 'normal')),
+      'sfx', '["BANG"]'::jsonb)
+    where id = ${panelId}`);
+  // An outfit change on the panel: it must come back pointing at the imported character, outfit and panel.
+  await db.execute(sql`
+    insert into outfit_assignments (project_id, character_id, outfit_id, panel_id, scope)
+    select ${projectId}, o.character_id, o.id, ${panelId}, 'onward' from character_outfits o where o.id = ${outfit!.id}`);
 }
 
 /** The same fields read back, as counts that must match between the source project and its re-import. */
@@ -162,6 +174,15 @@ async function details(projectId: string) {
         join characters c on c.id = o.character_id
         where r.project_id = ${projectId} and c.project_id = ${projectId}
           and o.character_version_id = r.character_version_id) as outfit_references,
+      (select string_agg(a.scope || ':' || o.name, ',') from outfit_assignments a
+        join character_outfits o on o.id = a.outfit_id join characters c on c.id = a.character_id
+        join panels p on p.id = a.panel_id
+        where a.project_id = ${projectId} and c.project_id = ${projectId} and p.project_id = ${projectId}
+          and o.character_id = c.id) as outfit_changes,
+      (select count(*)::int from panels p join characters c
+          on c.id::text = p.planned_lettering->'dialogue'->0->>'speakerId'
+        where p.project_id = ${projectId} and c.project_id = ${projectId}
+          and p.planned_lettering->'sfx'->>0 = 'BANG') as planned_lettering,
       (select string_agg(status::text, ',' order by created_at, id) from assets
         where project_id = ${projectId} and type = 'panel_art' and deleted_at is null) as artwork_statuses`);
   return row!;
@@ -260,6 +281,8 @@ describe("project import", () => {
     expect(await artworkShas(projectId)).toEqual(srcArt);
     // Lossless: pauses, lock, approvals, page direction, prop pins, outfit links and artwork order all come back.
     expect(await details(projectId)).toEqual(await details(sourceId));
+    expect((await details(sourceId)).planned_lettering).toBe(1);
+    expect((await details(sourceId)).outfit_changes).toBe("onward:Rooftop coat");
 
     const [audio] = await h.deps.db.execute<{ n: number }>(sql`
       select count(*)::int as n from narration_segments s join audio_assets aa on aa.asset_id = s.active_audio_asset_id

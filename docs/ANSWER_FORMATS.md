@@ -1104,11 +1104,17 @@ interface ScenePages {
            */
           action?: string;
           /**
-           * The outfit, only if it differs from the character's usual one. Used in place of the default wardrobe.
+           * The outfit, only if it changes. Naming one of the character's outfits (project data lists them under outfits) switches the character into it from this panel on, reference image included, until another is named; anything else describes this panel's wardrobe.
            * Optional — defaults to "" when left out.
-           * @example "yellow oilskin coat over her overalls"
+           * @example "Storm gear, hood up"
            */
           outfit?: string;
+          /**
+           * How long an outfit named in outfit is worn. "onward" (the default): from this panel until another is named. "panel": this panel only, after which the character is back in what they wore before (a towel after a shower, a borrowed coat for one scene beat).
+           * Optional — may be left out.
+           * @example "panel"
+           */
+          outfitScope?: "onward" | "panel";
           /**
            * Where the character is in the frame. Also used to point the speech bubble's tail at the speaker.
            * Optional — defaults to "" when left out.
@@ -1312,7 +1318,8 @@ interface ScenePages {
                 "expression": "wary, squinting into the wind",
                 "pose": "standing, one hand holding her hat",
                 "action": "looking up at the tower",
-                "outfit": "yellow oilskin coat over her overalls",
+                "outfit": "Storm gear, hood up",
+                "outfitScope": "panel",
                 "position": "left foreground"
               }
             ],

@@ -61,7 +61,9 @@ Enums (`common.ts`): `approval_status` (`draft|approved|locked|superseded`), `us
   `prompt_override` (text, a user-edited prompt), `prompt_draft` (JSON, the sections written by the `page_prompts`
   job), `qa` (JSON, the latest consistency check of the active artwork) and `review` (JSON
   `{reason, message, at}`, set when the artwork needs a human look — for example because it came from the
-  content-policy fallback provider).
+  content-policy fallback provider). `planned_lettering` (JSON `{dialogue, sfx}`) holds the chapter plan's dialogue
+  (speakers resolved to characters) and SFX when automatic lettering was off, until Editor → Lettering → *Letter from
+  plan* places them and clears it. `seam` (JSON) is how a vertical strip panel meets the one before it.
 - `panel_specs` — versioned `PanelSpec` documents, unique per `(panel, version_number)`, authored by AI or user.
 - `dialogue_lines` (vector `Bubble`), `sound_effects` (`SfxStyle`), `narration_lines` (per `language`, so one chapter
   can carry several narration tracks over the same artwork; optional on-page box) → `narration_segments` (TTS units:
@@ -70,7 +72,8 @@ Enums (`common.ts`): `approval_status` (`draft|approved|locked|superseded`), `us
 ## Cast & world (`projects.ts`)
 
 - `characters` → `character_versions` (bible JSON, `immutable_traits`, status, parent version, change note) +
-  `character_aliases` + `character_outfits`.
+  `character_aliases` + `character_outfits`. `outfit_assignments` (in `media.ts`) sets an outfit on a panel,
+  `onward` (until the next change, in reading order) or for that `panel` only; see `docs/IMAGE_REFERENCES.md`.
 - `locations` → `location_versions`, `props` → `prop_versions` — same versioning shape.
 - `style_presets` (built-in and custom) and `project_styles` (the versioned project style).
 - `reference_assets` — links one canonical asset to exactly one subject version (character, location, prop or style),

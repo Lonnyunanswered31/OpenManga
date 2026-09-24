@@ -170,6 +170,13 @@ describe("full production flow (mock AI)", () => {
     );
     expect(applied.created.characters).toBeGreaterThanOrEqual(2);
     expect(applied.created.chapters).toBe(1);
+    // What the analysis read about the world lands where planners and narration look, and the summary becomes
+    // the description the cover is drawn from.
+    const pj = await alice.get<{ project: { description: string; settings: { worldNotes: string } } }>(
+      `/api/projects/${projectId}`,
+    );
+    expect(pj.project.settings.worldNotes).toContain("Genre and tone: fantasy");
+    expect(pj.project.description).toContain("Woo Jin");
 
     // locked revision forks on edit instead of being overwritten
     const saved = await alice.patch<{ forked: boolean; revision: { revisionNumber: number } }>(
@@ -263,6 +270,12 @@ describe("full production flow (mock AI)", () => {
     const r = await alice.post<{ job: Job }>(`/api/chapters/${chapterId}/plan`, {}, 202);
     const done = await waitJob(alice, r.job.id);
     expect(done.job.status).toBe("completed");
+    // The planner is asked to build backgrounds from each location's key features and to act out its cast, so it
+    // is given those, and who the protagonist is and how the cast relate.
+    const asked = (done.job as { compiledPrompt?: string }).compiledPrompt ?? "";
+    expect(asked).toContain('"keyFeatures":["recognizable');
+    expect(asked).toContain('"protagonist":true');
+    expect(asked).toMatch(/"relationships":\[\{[^}]*"kind":"rival"/);
     const ch = await alice.get<{ scenes: unknown[]; pages: { id: string }[] }>(`/api/chapters/${chapterId}`);
     expect(ch.scenes.length).toBeGreaterThan(0);
     expect(ch.pages.length).toBeGreaterThanOrEqual(2);
@@ -283,6 +296,17 @@ describe("full production flow (mock AI)", () => {
     await alice.patch(`/api/panels/${panelId}`, { characterVersionIds: [versionId] });
     // replanning without replace is refused
     await alice.post(`/api/chapters/${chapterId}/plan`, {}, 409);
+  });
+
+  test("preparing page prompts shows the model names, the location and the props, never database ids", async () => {
+    const r = await alice.post<{ job: Job }>(`/api/pages/${pageId}/prepare-prompts`, {}, 202);
+    const done = await waitJob(alice, r.job.id);
+    expect(done.job.status).toBe("completed");
+    const asked = (done.job as { compiledPrompt?: string }).compiledPrompt ?? "";
+    expect(asked).toContain('"name":"Woo Jin"');
+    expect(asked).toContain('"location":{"name":"Rooftop"');
+    expect(asked).not.toMatch(/"characterId":"[0-9a-f]{8}-/);
+    expect(asked).not.toMatch(/"locationId":"[0-9a-f]{8}-/);
   });
 
   test("layout swap, add/duplicate/split/reorder panels", async () => {
@@ -528,7 +552,12 @@ describe("full production flow (mock AI)", () => {
       { style: "dramatic recap" },
       202,
     );
-    expect((await waitJob(alice, g.job.id)).job.status).toBe("completed");
+    const narrationJob = await waitJob(alice, g.job.id);
+    expect(narrationJob.job.status).toBe("completed");
+    // It knows who is in the chapter (for names and pronouns) and the world it is set in.
+    const asked = (narrationJob.job as { compiledPrompt?: string }).compiledPrompt ?? "";
+    expect(asked).toContain('"name":"Woo Jin","role":"protagonist","aliases":["he","the boy"],"genderPresentation"');
+    expect(asked).toContain('"worldNotes":"Setting: Rooftop');
     const n = await alice.get<{ lines: { id: string; segments: { id: string }[] }[] }>(
       `/api/chapters/${chapterId}/narration`,
     );
@@ -789,6 +818,11 @@ describe("full production flow (mock AI)", () => {
       202,
     );
     expect((await waitJob(alice, og.job.id)).job.status).toBe("completed");
+    // the approved design is what the prompt tells the model to reproduce, so it must actually be sent
+    const [ogUsage] = await h.deps.db.execute<{ n: number }>(
+      sql`select (metadata->>'referenceCount')::int as n from ai_usage where generation_job_id = ${og.job.id}`,
+    );
+    expect(ogUsage?.n).toBe(1);
     const detail = await alice.get<{ references: { id: string; kind: string; outfitId: string | null }[] }>(
       `/api/characters/${characterId}`,
     );

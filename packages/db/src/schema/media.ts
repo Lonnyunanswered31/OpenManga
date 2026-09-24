@@ -1,4 +1,12 @@
-import type { Bubble, Frame, ImageTransform, PanelSeam, PanelSpec, SfxStyle } from "@openmanga/schemas";
+import type {
+  Bubble,
+  Frame,
+  ImageTransform,
+  PanelSeam,
+  PanelSpec,
+  PlannedLettering,
+  SfxStyle,
+} from "@openmanga/schemas";
 import { bigint, boolean, index, integer, jsonb, pgTable, real, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { users } from "./auth.ts";
 import {
@@ -77,16 +85,24 @@ export const assetVariants = pgTable(
   ],
 );
 
-export type ReferenceKind =
-  | "portrait"
-  | "full_body"
-  | "multi_angle"
-  | "expression_sheet"
-  | "outfit"
-  | "location"
-  | "prop"
-  | "style"
-  | "uploaded";
+export const REFERENCE_KINDS = [
+  "portrait",
+  "full_body",
+  "multi_angle",
+  "expression_sheet",
+  "outfit",
+  "location",
+  /** One continuous wide view sweeping across the whole space. */
+  "location_panorama",
+  /** One image split into panels, each showing a different side of the space. */
+  "location_sheet",
+  "prop",
+  /** One image showing the object from several angles. */
+  "prop_multi_angle",
+  "style",
+  "uploaded",
+] as const;
+export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
 
 export const referenceAssets = pgTable(
   "reference_assets",
@@ -180,6 +196,8 @@ export const panels = pgTable(
     promptDraft: jsonb("prompt_draft").$type<Record<string, unknown>>(),
     /** Vertical strips only: how this panel meets the one before it. Null = the project's plain gap. */
     seam: jsonb("seam").$type<PanelSeam>(),
+    /** The plan's dialogue and SFX for this panel, until they are lettered onto the page. */
+    plannedLettering: jsonb("planned_lettering").$type<PlannedLettering>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -199,6 +217,35 @@ export const panelSpecs = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("panel_specs_uq").on(t.panelId, t.versionNumber)],
+);
+
+/**
+ * Which outfit a character wears, set on a panel. "onward" holds from that panel to the next change in reading order,
+ * across pages and chapters; "panel" dresses that one panel only and leaves the running outfit alone.
+ */
+export const outfitAssignments = pgTable(
+  "outfit_assignments",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    characterId: uuid("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    outfitId: uuid("outfit_id")
+      .notNull()
+      .references(() => characterOutfits.id, { onDelete: "cascade" }),
+    panelId: uuid("panel_id")
+      .notNull()
+      .references(() => panels.id, { onDelete: "cascade" }),
+    scope: text("scope").$type<"onward" | "panel">().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("outfit_assignments_uq").on(t.characterId, t.panelId, t.scope),
+    index("outfit_assignments_project_idx").on(t.projectId),
+  ],
 );
 
 export const dialogueLines = pgTable(

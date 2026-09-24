@@ -9,6 +9,7 @@ import { clsx, Field, StatusChip, TagInput } from "../../../components/ui.tsx";
 import { useAiBody } from "../../ai/AiPicker.tsx";
 import { useProject, useProjectId } from "../../project/ProjectLayout.tsx";
 import { PreviewVideoButton } from "../../video/VideoPreview.tsx";
+import { OutfitPicker, type PanelOutfits } from "./OutfitPicker.tsx";
 import { useEditor } from "./store.ts";
 
 /** Prepared prompt fields the planner prefers over the panel spec, in the order the prompt reads them. */
@@ -137,6 +138,10 @@ export function PanelTab({
     select: (r) => r.props,
   });
   const inv = [qk.page(data.page.id), qk.panel(panel.id)];
+  const outfits = useQuery({
+    queryKey: [...qk.panel(panel.id), "outfits"],
+    queryFn: () => get<PanelOutfits>(`/panels/${panel.id}/outfits`),
+  });
 
   const saveSpec = useAction(() => put(`/panels/${panel.id}/spec`, { spec }), {
     invalidate: inv,
@@ -352,6 +357,10 @@ export function PanelTab({
         </div>
         {spec.characters.map((pc, i) => {
           const name = data.cast.find((c) => c.id === pc.characterId)?.name ?? "Character";
+          // Planned specs name a character by its story key until it is edited here.
+          const wearing = outfits.data?.characters.find(
+            (c) => c.characterId === pc.characterId || c.analysisKey === pc.characterId,
+          );
           const upd = (k: "expression" | "pose" | "action" | "outfit" | "position", v: string) =>
             setField(
               "characters",
@@ -365,13 +374,22 @@ export function PanelTab({
                   <input
                     key={k}
                     className="input text-xs"
-                    placeholder={k}
+                    placeholder={k === "outfit" ? "outfit detail" : k}
                     aria-label={`${name} ${k}`}
                     value={pc[k]}
                     onChange={(e) => upd(k, e.target.value)}
                   />
                 ))}
               </div>
+              {wearing && (
+                <OutfitPicker
+                  projectId={projectId}
+                  panelId={panel.id}
+                  entry={wearing}
+                  locked={locked}
+                  invalidate={[qk.panel(panel.id), ["prompt-preview", panel.id]]}
+                />
+              )}
             </div>
           );
         })}
@@ -636,7 +654,14 @@ function ReviewBadge({
   );
 }
 
-type Qa = { verdict: "ok" | "mismatch"; problems: string[]; stale?: boolean; model?: string; checkedAt?: string };
+type Qa = {
+  verdict: "ok" | "mismatch";
+  problems: string[];
+  notes?: string;
+  stale?: boolean;
+  model?: string;
+  checkedAt?: string;
+};
 
 /** Result of the automatic cast/headcount check, plus a manual "check now". */
 function QaBadge({ panelId, qa, hasArt }: { panelId: string; qa: Qa | null; hasArt: boolean }) {
@@ -644,7 +669,14 @@ function QaBadge({ panelId, qa, hasArt }: { panelId: string; qa: Qa | null; hasA
   const aiText = useAiBody("text");
   const check = useAction(() => post(`/panels/${panelId}/check`, aiText()), { success: "Consistency check queued" });
   if (!hasArt) return null;
-  const label = !qa ? "not checked" : qa.stale ? "check outdated" : qa.verdict === "ok" ? "cast OK" : "cast mismatch";
+  // A mismatch names its first problem, so a stray sign in the art is not reported as a wrong cast.
+  const label = !qa
+    ? "not checked"
+    : qa.stale
+      ? "check outdated"
+      : qa.verdict === "ok"
+        ? "check OK"
+        : `${qa.problems[0] ?? "mismatch"}${qa.problems.length > 1 ? ` +${qa.problems.length - 1}` : ""}`;
   const cls =
     qa?.verdict === "mismatch" && !qa.stale
       ? "chip bg-amber-500/15 text-amber-700 dark:text-amber-300"
@@ -658,7 +690,7 @@ function QaBadge({ panelId, qa, hasArt }: { panelId: string; qa: Qa | null; hasA
       disabled={check.isPending}
       title={
         qa
-          ? `${qa.problems.length ? qa.problems.join("; ") : "Expected cast and headcount match"}${qa.model ? ` — ${qa.model}` : ""}. Click to check again.`
+          ? `${qa.problems.length ? qa.problems.join("; ") : "Expected cast and headcount match"}${qa.notes ? `. ${qa.notes}` : ""}${qa.model ? ` — ${qa.model}` : ""}. Click to check again.`
           : "Run the vision consistency check (Project settings → Consistency check)"
       }
       onClick={() => check.mutate()}
